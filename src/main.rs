@@ -5,22 +5,24 @@ struct Grid {
     content: Vec<Vec<char>>,
     height: usize,
     width: usize,
+    next_subsection_id: u32,
 }
 
 impl Grid {
     fn new(grid_input: Vec<Vec<char>>) -> Self {
-        let width: usize = grid_input.len();
-        let height: usize = if width > 0 { grid_input[0].len() } else { 0 };
+        let height: usize = grid_input.len();
+        let width: usize = if height > 0 { grid_input[0].len() } else { 0 };
 
         Self {
             content: grid_input,
             height,
             width,
+            next_subsection_id: 0,
         }
     }
 
     // function that creates a rectangular area within the grid
-    fn create_subsection(&self, starting_y: usize, starting_x: usize) -> Rectangle {
+    fn create_subsection(&mut self, starting_y: usize, starting_x: usize) -> Option<Subsection> {
         let mut y: usize = starting_y;
         let mut expand_y: bool = true;
 
@@ -29,6 +31,10 @@ impl Grid {
 
         // check for stating color
         let color: char = self.content[y][x];
+
+        if color == 'X' {
+            return None;
+        }
 
         while expand_y || expand_x {
             // check for boundries (-1 because dimensions are 1 based and y are 0 based [indexes])
@@ -44,8 +50,8 @@ impl Grid {
                 expand_x = false;
             }
 
-            // goes over fields below existing rectangle towards the right
-            // increases the rectangle by one line downwards
+            // goes over fields below existing subsection towards the right
+            // increases the subsection by one line downwards
             if expand_y {
                 for i in starting_x..x {
                     if !self.is_color(y, i, color) {
@@ -54,13 +60,13 @@ impl Grid {
                     }
                 }
             }
-            //if rectangle has room below, add 1 to row counter
+            //if subsection has room below, add 1 to row counter
             if expand_y {
                 y += 1;
             }
 
             // now go over fields on the right, same concept idea as before
-            // just on the right of the existing rectangle
+            // just on the right of the existing subsection
             if expand_x {
                 for i in starting_y..y {
                     if !self.is_color(i, x, color) {
@@ -74,13 +80,16 @@ impl Grid {
             }
         }
 
-        Rectangle {
+        let sub: Subsection = Subsection {
+            _id: self.next_subsection_id,
             color,
             start_y: starting_y,
             start_x: starting_x,
             end_y: y,
             end_x: x,
-        }
+        };
+        self.next_subsection_id += 1;
+        Some(sub)
     }
 
     fn is_color(&self, y: usize, x: usize, color: char) -> bool {
@@ -90,7 +99,8 @@ impl Grid {
 
 // output format for the sub sections of the matt
 #[derive(Debug)]
-struct Rectangle {
+struct Subsection {
+    _id: u32,
     color: char,
     start_y: usize,
     start_x: usize,
@@ -103,7 +113,7 @@ fn main() {
     // the outer rings are blue and the middle 5x5 is yellow
     let input_grid: Vec<Vec<char>> = vec![
         vec!['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
-        vec!['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
+        vec!['X', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
@@ -113,50 +123,56 @@ fn main() {
         vec!['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
     ];
 
-    let grid: Grid = Grid::new(input_grid);
-    let mut subsections: Vec<Rectangle> = Vec::new();
+    let mut grid: Grid = Grid::new(input_grid);
+    let mut subsections: Vec<Subsection> = Vec::new();
 
     // input handling; probably temporary but good to know for me
     // input numbers are 0 based for indexing
+
+    let mut input_buffer = String::new();
+
     loop {
         println!("Enter starting x: ");
-        let mut x_in: String = String::new();
 
         io::stdin()
-            .read_line(&mut x_in)
+            .read_line(&mut input_buffer)
             .expect("Failed to read line!");
 
-        let starting_x: usize = match x_in.trim().parse() {
+        let starting_x: usize = match input_buffer.trim().parse() {
             Ok(num) => num,
             Err(_) => {
                 println!("Please type a valid Number!");
                 continue;
             }
         };
+        input_buffer.clear();
 
         println!("Enter starting y: ");
-        let mut y_in: String = String::new();
 
         io::stdin()
-            .read_line(&mut y_in)
+            .read_line(&mut input_buffer)
             .expect("Failed to read line!");
 
-        let starting_y: usize = match y_in.trim().parse() {
+        let starting_y: usize = match input_buffer.trim().parse() {
             Ok(num) => num,
             Err(_) => {
                 println!("Please type a valid Number!");
                 continue;
             }
         };
+        input_buffer.clear();
 
         // creating subsection and printing starting and ending coordinates
-        let rect: Rectangle = grid.create_subsection(starting_y, starting_x);
+        // also handles None in case starting cell is marked "X"(invalid)
+        let Some(sub) = grid.create_subsection(starting_y, starting_x) else {
+            println!("Starting Cell is invalid!");
+            continue;
+        };
         println!(
             "start:({},{}); end:({},{}); color: {}",
-            rect.start_x, rect.start_y, rect.end_x, rect.end_y, rect.color
+            sub.start_x, sub.start_y, sub.end_x, sub.end_y, sub.color
         );
-
-        subsections.push(rect);
+        subsections.push(sub);
         println!("current list of Subsections: {:#?}", subsections);
     }
 }
