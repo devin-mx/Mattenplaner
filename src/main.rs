@@ -2,7 +2,7 @@
 use std::io;
 
 struct Grid {
-    content: Vec<Vec<char>>,
+    content: Vec<Vec<Cell>>,
     height: usize,
     width: usize,
     next_subsection_id: u32,
@@ -13,8 +13,23 @@ impl Grid {
         let height: usize = grid_input.len();
         let width: usize = if height > 0 { grid_input[0].len() } else { 0 };
 
+        let mut grid: Vec<Vec<Cell>> = Vec::new();
+
+        for row in grid_input {
+            let mut r = Vec::new();
+            for item in row {
+                let color = Color::from(item);
+                let cell = Cell {
+                    color,
+                    owned_by: None,
+                };
+                r.push(cell);
+            }
+            grid.push(r);
+        }
+
         Self {
-            content: grid_input,
+            content: grid,
             height,
             width,
             next_subsection_id: 0,
@@ -30,26 +45,14 @@ impl Grid {
         let mut expand_x: bool = true;
 
         // check for stating color
-        let color: char = self.content[y][x];
+        let color: &Color = &self.content[y][x].color;
 
-        if color == 'X' {
+        if color == &Color::None {
             return None;
         }
 
         while expand_y || expand_x {
             // check for boundries (-1 because dimensions are 1 based and y are 0 based [indexes])
-            if y == (self.height - 1) && x == (self.width - 1) {
-                break;
-            }
-
-            if y == (self.height - 1) {
-                expand_y = false;
-            }
-
-            if x == (self.width - 1) {
-                expand_x = false;
-            }
-
             // goes over fields below existing subsection towards the right
             // increases the subsection by one line downwards
             if expand_y {
@@ -78,11 +81,23 @@ impl Grid {
             if expand_x {
                 x += 1;
             }
+
+            if y == self.height && x == self.width {
+                break;
+            }
+
+            if y == self.height {
+                expand_y = false;
+            }
+
+            if x == self.width {
+                expand_x = false;
+            }
         }
 
         let sub: Subsection = Subsection {
             _id: self.next_subsection_id,
-            color,
+            color: color.clone(),
             start_y: starting_y,
             start_x: starting_x,
             end_y: y,
@@ -92,8 +107,8 @@ impl Grid {
         Some(sub)
     }
 
-    fn is_color(&self, y: usize, x: usize, color: char) -> bool {
-        self.content[y][x] == color
+    fn is_color(&self, y: usize, x: usize, color: &Color) -> bool {
+        &self.content[y][x].color == color
     }
 }
 
@@ -101,11 +116,34 @@ impl Grid {
 #[derive(Debug)]
 struct Subsection {
     _id: u32,
-    color: char,
+    color: Color,
     start_y: usize,
     start_x: usize,
+    // The end coordinates are exclusive
+    // dont panic over an end_x being 9 for an 9x9 grid
     end_x: usize,
     end_y: usize,
+}
+#[derive(Debug, PartialEq, Clone)]
+enum Color {
+    Blue,
+    Yellow,
+    None,
+}
+
+impl From<char> for Color {
+    fn from(item: char) -> Self {
+        match item {
+            'B' => Color::Blue,
+            'Y' => Color::Yellow,
+            _ => Color::None,
+        }
+    }
+}
+
+struct Cell {
+    color: Color,
+    owned_by: Option<usize>,
 }
 
 fn main() {
@@ -169,7 +207,7 @@ fn main() {
             continue;
         };
         println!(
-            "start:({},{}); end:({},{}); color: {}",
+            "start:({},{}); end:({},{}); color: {:?}",
             sub.start_x, sub.start_y, sub.end_x, sub.end_y, sub.color
         );
         subsections.push(sub);
