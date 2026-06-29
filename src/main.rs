@@ -1,11 +1,23 @@
-// io for user input to detect starting point
+use std::fmt;
 use std::io;
 
 struct Grid {
     content: Vec<Vec<Cell>>,
     height: usize,
     width: usize,
-    next_subsection_id: u32,
+    next_subsection_id: usize,
+}
+
+impl fmt::Display for Grid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for row in &self.content {
+            for cell in row {
+                write!(f, "{} ", cell)?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
 }
 
 impl Grid {
@@ -47,7 +59,8 @@ impl Grid {
         // check for stating color
         let color: &Color = &self.content[y][x].color;
 
-        if color == &Color::None {
+        if !self.is_available(y, x, color) {
+            println!("Starting Cell is unavailable!");
             return None;
         }
 
@@ -57,7 +70,7 @@ impl Grid {
             // increases the subsection by one line downwards
             if expand_y {
                 for i in starting_x..x {
-                    if !self.is_color(y, i, color) {
+                    if !self.is_available(y, i, color) {
                         expand_y = false;
                         break;
                     }
@@ -72,7 +85,7 @@ impl Grid {
             // just on the right of the existing subsection
             if expand_x {
                 for i in starting_y..y {
-                    if !self.is_color(i, x, color) {
+                    if !self.is_available(i, x, color) {
                         expand_x = false;
                         break;
                     }
@@ -103,19 +116,26 @@ impl Grid {
             end_y: y,
             end_x: x,
         };
+
+        for i in starting_y..y {
+            for j in starting_x..x {
+                self.content[i][j].owned_by = Some(self.next_subsection_id);
+            }
+        }
+
         self.next_subsection_id += 1;
         Some(sub)
     }
 
-    fn is_color(&self, y: usize, x: usize, color: &Color) -> bool {
-        &self.content[y][x].color == color
+    fn is_available(&self, y: usize, x: usize, color: &Color) -> bool {
+        &self.content[y][x].color == color && self.content[y][x].owned_by.is_none()
     }
 }
 
 // output format for the sub sections of the matt
 #[derive(Debug)]
 struct Subsection {
-    _id: u32,
+    _id: usize,
     color: Color,
     start_y: usize,
     start_x: usize,
@@ -131,6 +151,16 @@ enum Color {
     None,
 }
 
+impl fmt::Display for Color {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Blue => write!(f, "B"),
+            Self::Yellow => write!(f, "Y"),
+            Self::None => write!(f, "N"),
+        }
+    }
+}
+
 impl From<char> for Color {
     fn from(item: char) -> Self {
         match item {
@@ -141,9 +171,16 @@ impl From<char> for Color {
     }
 }
 
+#[derive(Debug)]
 struct Cell {
     color: Color,
     owned_by: Option<usize>,
+}
+
+impl fmt::Display for Cell {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({}, {:?}) ", self.color, self.owned_by)
+    }
 }
 
 fn main() {
@@ -151,7 +188,7 @@ fn main() {
     // the outer rings are blue and the middle 5x5 is yellow
     let input_grid: Vec<Vec<char>> = vec![
         vec!['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
-        vec!['X', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
+        vec!['B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
         vec!['B', 'B', 'Y', 'Y', 'Y', 'Y', 'Y', 'B', 'B'],
@@ -203,7 +240,6 @@ fn main() {
         // creating subsection and printing starting and ending coordinates
         // also handles None in case starting cell is marked "X"(invalid)
         let Some(sub) = grid.create_subsection(starting_y, starting_x) else {
-            println!("Starting Cell is invalid!");
             continue;
         };
         println!(
@@ -212,5 +248,6 @@ fn main() {
         );
         subsections.push(sub);
         println!("current list of Subsections: {:#?}", subsections);
+        println!("{}", grid);
     }
 }
