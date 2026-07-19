@@ -172,8 +172,12 @@ impl Grid {
         }
         self.delivery.add(top_left_corner_area);
 
+        println!("{}", self);
+
         let mut x: usize = tatami_start_x;
         let mut y: usize = tatami_start_y;
+
+        let mut count = 0;
 
         while x < self.width && y < self.height {
             if x < self.width {
@@ -195,7 +199,23 @@ impl Grid {
                 self.delivery.current_load.len()
             );
             println!("Delivery Count: {}", self.delivery.loads.len());
+
+            count += 1;
+
+            if count != 2 {
+                continue;
+            }
+
+            count = 0;
+
+            let v = self.expand_center(x, y);
+            self.delivery.add(v);
         }
+
+        let v = self.expand_center(self.width, self.height);
+        self.delivery.add(v);
+
+        println!("{}", self);
     }
 
     fn find_first_tatami_matt(&self) -> Option<&CellCoordinate> {
@@ -205,6 +225,21 @@ impl Grid {
             }
         }
         None
+    }
+
+    fn expand_center(&mut self, x: usize, y: usize) -> Vec<Cell> {
+        let mut v: Vec<Cell> = Vec::new();
+        for row in self.content[..y].iter_mut() {
+            for cell in row[..x].iter_mut() {
+                if cell.owned {
+                    continue;
+                }
+
+                cell.owned = true;
+                v.push(cell.clone());
+            }
+        }
+        v
     }
 
     fn expand_right(&mut self, x: usize, y: usize) -> Vec<Cell> {
