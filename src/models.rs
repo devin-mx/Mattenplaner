@@ -231,10 +231,12 @@ impl Grid {
         let mut v: Vec<Cell> = Vec::new();
         for row in self.content[..y].iter_mut() {
             for cell in row[..x].iter_mut() {
+                // if cell.owned || cell.color == Color::Blue {
+                // continue;
+                // }
                 if cell.owned {
                     continue;
                 }
-
                 cell.owned = true;
                 v.push(cell.clone());
             }
