@@ -1,6 +1,6 @@
 use colored::Colorize;
-use std::fmt::{self, format, write};
-
+use core::panic;
+use std::fmt;
 type MatID = usize;
 
 pub struct Grid {
@@ -211,14 +211,24 @@ impl Grid {
                     let color = Color::from(item.chars().nth(0).unwrap());
 
                     let position: MatPostion = match item.chars().nth(1).unwrap() {
-                        'R' => MatPostion::Double {
-                            first: CellCoordinate::new(x, y),
-                            second: CellCoordinate::new(x + 1, y),
-                        },
-                        'D' => MatPostion::Double {
-                            first: CellCoordinate::new(x, y),
-                            second: CellCoordinate::new(x, y + 1),
-                        },
+                        'R' => {
+                            if grid_input[y][x + 1].chars().nth(0) != item.chars().nth(0) {
+                                panic!("Error: Multi Color Double Mat!")
+                            }
+                            MatPostion::Double {
+                                first: CellCoordinate::new(x, y),
+                                second: CellCoordinate::new(x + 1, y),
+                            }
+                        }
+                        'D' => {
+                            if grid_input[y + 1][x].chars().nth(0) != item.chars().nth(0) {
+                                panic!("Error: Multi Color Double Mat!")
+                            }
+                            MatPostion::Double {
+                                first: CellCoordinate::new(x, y),
+                                second: CellCoordinate::new(x, y + 1),
+                            }
+                        }
                         'U' => {
                             let double_id = grid[y - 1][x];
                             r.push(double_id);
@@ -230,7 +240,7 @@ impl Grid {
                             continue;
                         }
                         _ => {
-                            panic!("Faulty Mat Input! :c")
+                            panic!("Error: Faulty Mat Input! :c")
                         }
                     };
 

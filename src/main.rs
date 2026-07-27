@@ -12,7 +12,7 @@ fn main() {
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
         vec!["B", "BR", "BL", "B", "B", "B", "B", "B", "B"],
         vec!["BD", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
-        vec!["BU", "B", "Y", "Y", "Y", "Y", "YR", "BL", "B"],
+        vec!["BU", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
         vec!["B", "B", "Y", "Y", "YD", "Y", "Y", "B", "B"],
         vec!["B", "B", "Y", "Y", "YU", "Y", "Y", "B", "B"],
         vec!["B", "B", "Y", "Y", "Y", "YR", "YL", "B", "B"],
