@@ -1,12 +1,16 @@
 use colored::Colorize;
 use core::panic;
 use std::fmt;
+
 type MatID = usize;
 
 pub struct Grid {
     cells: Vec<Vec<MatID>>,
     mats: Vec<Mat>,
+    #[allow(dead_code)]
     delivery: Delivery,
+    build_order: Vec<MatID>,
+    print_intervals: usize,
     height: usize,
     width: usize,
 }
@@ -46,6 +50,7 @@ struct CellCoordinate {
 //          - thus allowing to change Cell.owned within add whch would be more logical (I think)
 //          - do not be confused; this is mostly a concern for readability and display logic
 //
+
 struct Delivery {
     current_load: Vec<MatID>,
     loads: Vec<Vec<MatID>>,
@@ -166,6 +171,7 @@ impl CellCoordinate {
     }
 }
 
+#[allow(dead_code)]
 impl Delivery {
     pub fn new(max_size: usize) -> Self {
         Self {
@@ -213,7 +219,11 @@ impl Grid {
                     let position: MatPostion = match item.chars().nth(1).unwrap() {
                         'R' => {
                             if grid_input[y][x + 1].chars().nth(0) != item.chars().nth(0) {
-                                panic!("Error: Multi Color Double Mat!")
+                                panic!("Error: Multi Color Double Mat!");
+                            } else if grid_input[y][x + 1].len() != 2 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            } else if grid_input[y][x + 1].chars().nth(1) != Some('L') {
+                                panic!("Error: Inconsistend Mat Input!");
                             }
                             MatPostion::Double {
                                 first: CellCoordinate::new(x, y),
@@ -222,7 +232,11 @@ impl Grid {
                         }
                         'D' => {
                             if grid_input[y + 1][x].chars().nth(0) != item.chars().nth(0) {
-                                panic!("Error: Multi Color Double Mat!")
+                                panic!("Error: Multi Color Double Mat!");
+                            } else if grid_input[y + 1][x].len() != 2 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            } else if grid_input[y + 1][x].chars().nth(1) != Some('U') {
+                                panic!("Error: Inconsistend Mat Input!");
                             }
                             MatPostion::Double {
                                 first: CellCoordinate::new(x, y),
@@ -231,11 +245,21 @@ impl Grid {
                         }
                         'U' => {
                             let double_id = grid[y - 1][x];
+
+                            if grid_input[y - 1][x].len() != 2 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            }
+
                             r.push(double_id);
                             continue;
                         }
                         'L' => {
                             let double_id = r[x - 1];
+
+                            if grid_input[y][x - 1].len() != 2 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            }
+
                             r.push(double_id);
                             continue;
                         }
@@ -279,6 +303,8 @@ impl Grid {
             width,
             mats,
             delivery,
+            build_order: Vec::new(),
+            print_intervals: 2,
         }
     }
 
@@ -306,22 +332,12 @@ impl Grid {
             (start.x, start.y)
         };
 
-        let mut top_left_corner_area: Vec<MatID> = Vec::new();
-
-        let mat_ids: Vec<MatID> = self.cells[..tatami_start_y]
+        let top_left_corner_area: Vec<MatID> = self.cells[..tatami_start_y]
             .iter()
             .flat_map(|row| row[..tatami_start_x].iter().copied())
             .collect();
 
-        for mat_id in mat_ids {
-            let mat = self.get_mut_mat_with_id(mat_id);
-            mat.owned = true;
-            top_left_corner_area.push(mat_id);
-        }
-
-        self.delivery.add(top_left_corner_area);
-
-        println!("{}", self);
+        self.add_to_build(top_left_corner_area);
 
         let mut x: usize = tatami_start_x;
         let mut y: usize = tatami_start_y;
@@ -331,36 +347,28 @@ impl Grid {
         while x < self.width || y < self.height {
             if x < self.width {
                 let add_cells = self.expand_right(x, tatami_start_y);
-                self.delivery.add(add_cells);
+                self.add_to_build(add_cells);
                 x += 1;
             }
 
             if y < self.height {
                 let add_cells = self.expand_down(tatami_start_x, y);
-                self.delivery.add(add_cells);
+                self.add_to_build(add_cells);
                 y += 1;
             }
 
-            println!("{}", self);
-
-            println!(
-                "Current Delivery Size: {}",
-                self.delivery.current_load.len()
-            );
-            println!("Delivery Count: {}", self.delivery.loads.len());
-
             if count % 2 == 1 {
                 let v = self.expand_center(x, y);
-                self.delivery.add(v);
+                self.add_to_build(v);
             }
 
             count += 1;
         }
 
         let v = self.expand_center(self.width, self.height);
-        self.delivery.add(v);
+        self.add_to_build(v);
 
-        println!("{}", self);
+        print!("{}", self);
     }
 
     fn find_first_tatami_mat(&self) -> Option<&CellCoordinate> {
@@ -373,7 +381,7 @@ impl Grid {
         None
     }
 
-    fn expand_center(&mut self, x: usize, y: usize) -> Vec<MatID> {
+    fn expand_center(&self, x: usize, y: usize) -> Vec<MatID> {
         let mut v: Vec<MatID> = Vec::new();
 
         let mat_ids: Vec<MatID> = self.cells[..y]
@@ -382,38 +390,37 @@ impl Grid {
             .collect();
 
         for mat_id in mat_ids {
-            let mat = self.get_mut_mat_with_id(mat_id);
+            let mat = self.get_mat_with_id(mat_id);
 
             if !mat.owned {
-                mat.owned = true;
                 v.push(mat_id);
             }
         }
         v
     }
 
-    fn expand_right(&mut self, x: usize, y: usize) -> Vec<MatID> {
-        let mut v = Vec::new();
-
+    fn expand_right(&self, x: usize, y: usize) -> Vec<MatID> {
         let mat_ids: Vec<MatID> = self.cells[..y].iter().map(|row| row[x]).collect();
-        for mat_id in mat_ids {
-            let mat = self.get_mut_mat_with_id(mat_id);
-            mat.owned = true;
-            v.push(mat_id);
-        }
-
-        v
+        mat_ids
     }
 
     fn expand_down(&mut self, x: usize, y: usize) -> Vec<MatID> {
-        let mut v = Vec::new();
-        let mat_ids = self.cells[y][..x].to_vec();
+        self.cells[y][..x].to_vec()
+    }
 
-        for mat_id in mat_ids {
+    fn add_to_build(&mut self, build_mats: Vec<MatID>) {
+        for mat_id in build_mats {
             let mat = self.get_mut_mat_with_id(mat_id);
             mat.owned = true;
-            v.push(mat_id);
+            self.build_order.push(mat_id);
+
+            if self.build_order.len().is_multiple_of(self.print_intervals) {
+                println!("{}", self);
+            }
         }
-        v
+    }
+
+    pub fn set_print_intervals(&mut self, intervals: usize) {
+        self.print_intervals = intervals;
     }
 }
