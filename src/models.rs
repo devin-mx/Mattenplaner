@@ -1,5 +1,4 @@
 use colored::Colorize;
-use core::panic;
 use std::fmt;
 
 type MatID = usize;
@@ -44,12 +43,6 @@ struct CellCoordinate {
     y: usize,
     x: usize,
 }
-
-// todo: learn Lifetime annotation
-//          - this would allow to store references in delivery
-//          - thus allowing to change Cell.owned within add whch would be more logical (I think)
-//          - do not be confused; this is mostly a concern for readability and display logic
-//
 
 struct Delivery {
     current_load: Vec<MatID>,
@@ -196,7 +189,7 @@ impl Delivery {
 }
 
 impl Grid {
-    pub fn new(grid_input: Vec<Vec<&str>>, max_delivery_size: Option<usize>) -> Self {
+    pub fn new(grid_input: Vec<Vec<&str>>, max_delivery_size: usize) -> Self {
         let mut id = ID::new();
 
         let height: usize = grid_input.len();
@@ -218,6 +211,10 @@ impl Grid {
 
                     let position: MatPostion = match item.chars().nth(1).unwrap() {
                         'R' => {
+                            if x + 1 >= width {
+                                panic!("Error: Inconsistend Mat Input!");
+                            }
+
                             if grid_input[y][x + 1].chars().nth(0) != item.chars().nth(0) {
                                 panic!("Error: Multi Color Double Mat!");
                             } else if grid_input[y][x + 1].len() != 2 {
@@ -231,6 +228,10 @@ impl Grid {
                             }
                         }
                         'D' => {
+                            if y + 1 >= height {
+                                panic!("Error: Inconsistend Mat Input!");
+                            }
+
                             if grid_input[y + 1][x].chars().nth(0) != item.chars().nth(0) {
                                 panic!("Error: Multi Color Double Mat!");
                             } else if grid_input[y + 1][x].len() != 2 {
@@ -244,6 +245,10 @@ impl Grid {
                             }
                         }
                         'U' => {
+                            if y == 0 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            }
+
                             let double_id = grid[y - 1][x];
 
                             if grid_input[y - 1][x].len() != 2 {
@@ -254,6 +259,10 @@ impl Grid {
                             continue;
                         }
                         'L' => {
+                            if x == 0 {
+                                panic!("Error: Inconsistend Mat sizes!");
+                            }
+
                             let double_id = r[x - 1];
 
                             if grid_input[y][x - 1].len() != 2 {
@@ -295,7 +304,7 @@ impl Grid {
             grid.push(r);
         }
 
-        let delivery = Delivery::new(max_delivery_size.unwrap_or(40));
+        let delivery = Delivery::new(max_delivery_size);
 
         Self {
             cells: grid,
@@ -410,6 +419,10 @@ impl Grid {
 
     fn add_to_build(&mut self, build_mats: Vec<MatID>) {
         for mat_id in build_mats {
+            if self.build_order.contains(&mat_id) {
+                continue;
+            }
+
             let mat = self.get_mut_mat_with_id(mat_id);
             mat.owned = true;
             self.build_order.push(mat_id);

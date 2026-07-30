@@ -9,7 +9,7 @@ fn main() {
     // This was my first attempt to implement a Matt plan
     // kept it because it is easy to change
     let input_grid: Vec<Vec<&str>> = vec![
-        vec!["B", "B", "B", "B", "B", "B", "B", "B", "BR"],
+        vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
         vec!["B", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
         vec!["B", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
@@ -20,7 +20,7 @@ fn main() {
         vec!["BU", "BR", "BL", "B", "B", "B", "B", "B", "B"],
     ];
 
-    let mut grid: Grid = Grid::new(input_grid, Some(10));
+    let mut grid: Grid = Grid::new(input_grid, 10);
 
     println!("{}", grid);
 
