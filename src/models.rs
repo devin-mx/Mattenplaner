@@ -273,7 +273,7 @@ impl Grid {
                             continue;
                         }
                         _ => {
-                            panic!("Error: Faulty Mat Input! :c")
+                            panic!("Error: Faulty Mat Input!")
                         }
                     };
 
