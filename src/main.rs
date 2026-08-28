@@ -11,20 +11,21 @@ fn main() {
     let input_grid: Vec<Vec<&str>> = vec![
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
-        vec!["B", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
-        vec!["B", "B", "Y", "Y", "Y", "Y", "Y", "B", "B"],
-        vec!["B", "B", "Y", "Y", "YD", "Y", "Y", "B", "B"],
-        vec!["B", "B", "Y", "Y", "YU", "Y", "Y", "B", "B"],
+        vec!["B", "B", "YR", "YL", "Y", "Y", "Y", "B", "B"],
+        vec!["B", "B", "YD", "Y", "Y", "Y", "Y", "B", "B"],
+        vec!["B", "B", "YU", "Y", "Y", "Y", "YD", "B", "B"],
+        vec!["B", "B", "Y", "Y", "Y", "Y", "YU", "B", "B"],
         vec!["B", "B", "Y", "Y", "Y", "YR", "YL", "B", "B"],
-        vec!["BD", "B", "B", "B", "B", "B", "B", "B", "B"],
-        vec!["BU", "BR", "BL", "B", "B", "B", "B", "B", "B"],
+        vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
+        vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
     ];
 
     let mut grid: Grid = Grid::new(input_grid, 10);
 
     println!("{}", grid);
 
-    grid.set_print_intervals(2);
-
-    grid.build_diagonally();
+    let sections = grid.build_diagonally();
+    for s in sections {
+        println!("{s}");
+    }
 }

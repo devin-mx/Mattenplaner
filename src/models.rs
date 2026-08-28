@@ -1,27 +1,27 @@
 use colored::Colorize;
-use std::fmt;
+use std::{fmt, mem::take};
 
 type MatID = usize;
 
 pub struct Grid {
     cells: Vec<Vec<MatID>>,
     mats: Vec<Mat>,
-    #[allow(dead_code)]
     delivery: Delivery,
     build_order: Vec<MatID>,
     print_intervals: usize,
+    section_size: usize,
     height: usize,
     width: usize,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum Color {
+pub enum Color {
     Blue,
     Yellow,
     None,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 enum MatPostion {
     Singe(CellCoordinate),
     Double {
@@ -38,15 +38,23 @@ struct Mat {
     owned: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct CellCoordinate {
+#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+pub struct CellCoordinate {
     y: usize,
     x: usize,
 }
 
+#[derive(Debug)]
+pub struct Section {
+    pub first_postion: CellCoordinate,
+    pub last_position: CellCoordinate,
+    cells: Vec<MatID>,
+    pub color: Color,
+}
+
 struct Delivery {
-    current_load: Vec<MatID>,
-    loads: Vec<Vec<MatID>>,
+    current_load: Vec<Color>,
+    loads: Vec<Vec<Color>>,
     max_size: usize,
 }
 
@@ -128,6 +136,16 @@ impl fmt::Display for Color {
     }
 }
 
+impl fmt::Display for Section {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = format!(
+            "Color: {}; from {}, to {}",
+            self.color, self.first_postion, self.last_position
+        );
+        write!(f, "{}", s)
+    }
+}
+
 impl From<char> for Color {
     fn from(item: char) -> Self {
         match item {
@@ -154,7 +172,7 @@ impl Mat {
 
 impl fmt::Display for CellCoordinate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.x, self.y)
+        write!(f, "({}, {})", self.x + 1, self.y + 1)
     }
 }
 
@@ -164,7 +182,6 @@ impl CellCoordinate {
     }
 }
 
-#[allow(dead_code)]
 impl Delivery {
     pub fn new(max_size: usize) -> Self {
         Self {
@@ -174,14 +191,13 @@ impl Delivery {
         }
     }
 
-    fn add(&mut self, mut added_content: Vec<MatID>) {
+    fn add(&mut self, mut added_content: Vec<Color>) {
         while added_content.len() + self.current_load.len() >= self.max_size {
             let remaining_space = self.max_size - self.current_load.len();
             self.current_load
                 .extend(added_content.drain(..remaining_space));
 
-            self.loads.push(self.current_load.clone());
-            self.current_load.clear();
+            self.loads.push(take(&mut self.current_load));
         }
 
         self.current_load.extend(added_content);
@@ -314,6 +330,7 @@ impl Grid {
             delivery,
             build_order: Vec::new(),
             print_intervals: 2,
+            section_size: 2,
         }
     }
 
@@ -335,105 +352,197 @@ impl Grid {
         panic!("Mat doesnt Exist!");
     }
 
-    pub fn build_diagonally(&mut self) {
-        let (tatami_start_x, tatami_start_y) = {
-            let start = self.find_first_tatami_mat().unwrap();
-            (start.x, start.y)
-        };
+    pub fn build_diagonally(&mut self) -> Vec<Section> {
+        // preprocess the double mats
+        // section the mats
+        // order the sections
 
-        let top_left_corner_area: Vec<MatID> = self.cells[..tatami_start_y]
-            .iter()
-            .flat_map(|row| row[..tatami_start_x].iter().copied())
-            .collect();
+        let mut sections: Vec<Section> = Vec::new();
 
-        self.add_to_build(top_left_corner_area);
+        let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
 
-        let mut x: usize = tatami_start_x;
-        let mut y: usize = tatami_start_y;
-
-        let mut count = 0;
-
-        while x < self.width || y < self.height {
-            if x < self.width {
-                let add_cells = self.expand_right(x, tatami_start_y);
-                self.add_to_build(add_cells);
-                x += 1;
-            }
-
-            if y < self.height {
-                let add_cells = self.expand_down(tatami_start_x, y);
-                self.add_to_build(add_cells);
-                y += 1;
-            }
-
-            if count % 2 == 1 {
-                let v = self.expand_center(x, y);
-                self.add_to_build(v);
-            }
-
-            count += 1;
-        }
-
-        let v = self.expand_center(self.width, self.height);
-        self.add_to_build(v);
-
-        print!("{}", self);
-    }
-
-    fn find_first_tatami_mat(&self) -> Option<&CellCoordinate> {
-        for mat_id in self.cells.iter().flatten() {
+        for mat_id in &mat_ids {
             let mat = self.get_mat_with_id(*mat_id);
-            if mat.color == Color::Yellow {
-                return Some(mat.position.first());
+            if mat.owned {
+                continue;
+            }
+            if matches!(mat.position, MatPostion::Double { .. }) {
+                let section = self.set_2x1_mat(*mat_id);
+                sections.push(section);
             }
         }
-        None
-    }
 
-    fn expand_center(&self, x: usize, y: usize) -> Vec<MatID> {
-        let mut v: Vec<MatID> = Vec::new();
+        for mat_id in &mat_ids {
+            let seed_mat = self.get_mut_mat_with_id(*mat_id);
+            println!("{}", seed_mat.position.first());
 
-        let mat_ids: Vec<MatID> = self.cells[..y]
-            .iter()
-            .flat_map(|row| row[..x].iter().copied())
-            .collect();
-
-        for mat_id in mat_ids {
-            let mat = self.get_mat_with_id(mat_id);
-
-            if !mat.owned {
-                v.push(mat_id);
-            }
-        }
-        v
-    }
-
-    fn expand_right(&self, x: usize, y: usize) -> Vec<MatID> {
-        let mat_ids: Vec<MatID> = self.cells[..y].iter().map(|row| row[x]).collect();
-        mat_ids
-    }
-
-    fn expand_down(&mut self, x: usize, y: usize) -> Vec<MatID> {
-        self.cells[y][..x].to_vec()
-    }
-
-    fn add_to_build(&mut self, build_mats: Vec<MatID>) {
-        for mat_id in build_mats {
-            if self.build_order.contains(&mat_id) {
+            if seed_mat.owned {
                 continue;
             }
 
-            let mat = self.get_mut_mat_with_id(mat_id);
+            let seed_first_position = *seed_mat.position.first();
+            let seed_color = seed_mat.color;
+
+            let seed_start_x = seed_mat.position.first().x;
+            let seed_start_y = seed_mat.position.first().y;
+
+            let mut expand_right = true;
+            let mut expand_down = true;
+
+            let mut x = seed_start_x + 1;
+            let mut y = seed_start_y + 1;
+
+            let mut section_ids: Vec<MatID> = Vec::new();
+
+            seed_mat.owned = true;
+            section_ids.push(seed_mat.id);
+
+            'outer: while expand_right || expand_down {
+                if expand_right {
+                    if x >= self.width {
+                        expand_right = false;
+                        continue;
+                    }
+
+                    let cells_to_add: Vec<MatID> = self.cells[seed_start_y..y]
+                        .iter()
+                        .map(|row| row[x])
+                        .collect();
+
+                    if self.section_size < cells_to_add.len() + section_ids.len() {
+                        expand_right = false;
+                        continue;
+                    }
+
+                    for mat_id in &cells_to_add {
+                        if !self.is_cell_available(&seed_color, *mat_id) {
+                            expand_right = false;
+                            continue 'outer;
+                        }
+                    }
+
+                    for mat_id in &cells_to_add {
+                        let mat = self.get_mut_mat_with_id(*mat_id);
+                        mat.owned = true;
+                    }
+
+                    section_ids.extend(cells_to_add);
+
+                    x += 1;
+                }
+
+                if expand_down {
+                    if y >= self.height {
+                        expand_down = false;
+                        continue;
+                    }
+
+                    let cells_to_add: Vec<MatID> = self.cells[y][seed_start_x..x].to_vec();
+
+                    if self.section_size < cells_to_add.len() + section_ids.len() {
+                        expand_down = false;
+                        continue;
+                    }
+
+                    for mat_id in &cells_to_add {
+                        if !self.is_cell_available(&seed_color, *mat_id) {
+                            expand_down = false;
+                            continue 'outer;
+                        }
+                    }
+
+                    for mat_id in &cells_to_add {
+                        let mat = self.get_mut_mat_with_id(*mat_id);
+                        mat.owned = true;
+                    }
+
+                    section_ids.extend(cells_to_add);
+
+                    y += 1;
+                }
+            }
+
+            let last_id = section_ids.last();
+            let mat_id = match last_id {
+                None => continue,
+                Some(id) => *id,
+            };
+
+            let last_mat = self.get_mat_with_id(mat_id);
+            let s = Section {
+                color: seed_color,
+                cells: section_ids,
+                first_postion: seed_first_position,
+                last_position: *last_mat.position.first(),
+            };
+            sections.push(s);
+            println!("{}", self);
+        }
+        sections.sort_unstable_by_key(|item| {
+            (
+                item.first_postion.x + item.first_postion.y,
+                item.first_postion.y,
+            )
+        });
+        self.reset_grid();
+        sections
+    }
+
+    fn set_2x1_mat(&mut self, mat_id: MatID) -> Section {
+        let mat = self.get_mut_mat_with_id(mat_id);
+        let s = match mat.position {
+            MatPostion::Double { first, second } => Section {
+                first_postion: first,
+                last_position: second,
+                cells: vec![mat.id],
+                color: mat.color,
+            },
+            _ => panic!("Smth went wrong"),
+        };
+
+        mat.owned = true;
+        s
+    }
+
+    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> bool {
+        let mat = self.get_mat_with_id(mat_id);
+        &mat.color == color && !mat.owned
+    }
+
+    fn add_to_build(&mut self, build_mats: Vec<MatID>) {
+        for mat_id in &build_mats {
+            if self.build_order.contains(mat_id) {
+                continue;
+            }
+
+            let mat = self.get_mut_mat_with_id(*mat_id);
             mat.owned = true;
-            self.build_order.push(mat_id);
+            self.build_order.push(*mat_id);
 
             if self.build_order.len().is_multiple_of(self.print_intervals) {
                 println!("{}", self);
             }
         }
+
+        let delivery_mats: Vec<Color> = build_mats
+            .into_iter()
+            .map(|mat_id| {
+                let mat = self.get_mat_with_id(mat_id);
+                mat.color
+            })
+            .collect();
+
+        self.delivery.add(delivery_mats);
     }
 
     pub fn set_print_intervals(&mut self, intervals: usize) {
         self.print_intervals = intervals;
+    }
+
+    fn reset_grid(&mut self) {
+        let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
+        for mat_id in mat_ids {
+            self.get_mut_mat_with_id(mat_id).owned = false;
+        }
     }
 }
