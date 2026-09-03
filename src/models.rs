@@ -1,15 +1,14 @@
 use colored::Colorize;
-use std::{fmt, mem::take};
+use std::fmt;
 
 type MatID = usize;
 
 pub struct Grid {
     cells: Vec<Vec<MatID>>,
     mats: Vec<Mat>,
-    delivery: Delivery,
-    build_order: Vec<MatID>,
     print_intervals: usize,
     section_size: usize,
+    delivery_size: usize,
     height: usize,
     width: usize,
 }
@@ -21,7 +20,7 @@ pub enum Color {
     None,
 }
 
-#[derive(Clone, Debug, Copy)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 enum MatPostion {
     Singe(CellCoordinate),
     Double {
@@ -30,7 +29,7 @@ enum MatPostion {
     },
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Mat {
     id: MatID,
     position: MatPostion,
@@ -50,27 +49,25 @@ pub struct Section {
     pub last_position: CellCoordinate,
     cells: Vec<MatID>,
     pub color: Color,
+    is_double_mat: bool,
 }
 
-struct Delivery {
-    current_load: Vec<Color>,
-    loads: Vec<Vec<Color>>,
-    max_size: usize,
+#[derive(Debug, Clone)]
+pub enum GridError {
+    InvalidMatInput {
+        row: usize,
+        col: usize,
+        detail: String,
+    },
 }
 
-struct ID {
-    id: usize,
-}
-
-impl ID {
-    fn new() -> Self {
-        Self { id: 0 }
-    }
-
-    fn next(&mut self) -> usize {
-        let id = self.id;
-        self.id += 1;
-        id
+impl fmt::Display for GridError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidMatInput { row, col, detail } => {
+                write!(f, "Invalid mat at ({row}, {col}): {detail} ")
+            }
+        }
     }
 }
 
@@ -87,7 +84,7 @@ impl fmt::Display for Grid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (y, row) in self.cells.iter().enumerate() {
             for (x, mat_id) in row.iter().enumerate() {
-                let mat = self.get_mat_with_id(*mat_id);
+                let mat = &self.mats[*mat_id];
                 let current = CellCoordinate::new(x, y);
 
                 let cell_text = match &mat.position {
@@ -182,32 +179,8 @@ impl CellCoordinate {
     }
 }
 
-impl Delivery {
-    pub fn new(max_size: usize) -> Self {
-        Self {
-            current_load: Vec::new(),
-            loads: Vec::new(),
-            max_size,
-        }
-    }
-
-    fn add(&mut self, mut added_content: Vec<Color>) {
-        while added_content.len() + self.current_load.len() >= self.max_size {
-            let remaining_space = self.max_size - self.current_load.len();
-            self.current_load
-                .extend(added_content.drain(..remaining_space));
-
-            self.loads.push(take(&mut self.current_load));
-        }
-
-        self.current_load.extend(added_content);
-    }
-}
-
 impl Grid {
-    pub fn new(grid_input: Vec<Vec<&str>>, max_delivery_size: usize) -> Self {
-        let mut id = ID::new();
-
+    pub fn new(grid_input: Vec<Vec<&str>>, max_delivery_size: usize) -> Result<Self, GridError> {
         let height: usize = grid_input.len();
         let width: usize = if height > 0 { grid_input[0].len() } else { 0 };
 
@@ -218,25 +191,52 @@ impl Grid {
             let mut r = Vec::new();
             for (x, item) in row.iter().enumerate() {
                 if item.len() > 2 {
-                    panic!("Faulty mat input! :c");
+                    return Err(GridError::InvalidMatInput {
+                        row: y,
+                        col: x,
+                        detail: format!("mat descriptor '{item}' too long (max 2 chars)"),
+                    });
                 }
 
                 if item.len() == 2 {
-                    let mat_id = id.next();
                     let color = Color::from(item.chars().nth(0).unwrap());
 
                     let position: MatPostion = match item.chars().nth(1).unwrap() {
                         'R' => {
                             if x + 1 >= width {
-                                panic!("Error: Inconsistend Mat Input!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} points out of bounds"
+                                    ),
+                                });
                             }
 
                             if grid_input[y][x + 1].chars().nth(0) != item.chars().nth(0) {
-                                panic!("Error: Multi Color Double Mat!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend colors"
+                                    ),
+                                });
                             } else if grid_input[y][x + 1].len() != 2 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors (length)"
+                                    ),
+                                });
                             } else if grid_input[y][x + 1].chars().nth(1) != Some('L') {
-                                panic!("Error: Inconsistend Mat Input!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors (symbol)"
+                                    ),
+                                });
                             }
                             MatPostion::Double {
                                 first: CellCoordinate::new(x, y),
@@ -245,15 +245,39 @@ impl Grid {
                         }
                         'D' => {
                             if y + 1 >= height {
-                                panic!("Error: Inconsistend Mat Input!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} points out of bounds"
+                                    ),
+                                });
                             }
 
                             if grid_input[y + 1][x].chars().nth(0) != item.chars().nth(0) {
-                                panic!("Error: Multi Color Double Mat!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend colors"
+                                    ),
+                                });
                             } else if grid_input[y + 1][x].len() != 2 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors (length)"
+                                    ),
+                                });
                             } else if grid_input[y + 1][x].chars().nth(1) != Some('U') {
-                                panic!("Error: Inconsistend Mat Input!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors (symbol)"
+                                    ),
+                                });
                             }
                             MatPostion::Double {
                                 first: CellCoordinate::new(x, y),
@@ -262,13 +286,25 @@ impl Grid {
                         }
                         'U' => {
                             if y == 0 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} points out of bounds"
+                                    ),
+                                });
                             }
 
                             let double_id = grid[y - 1][x];
 
                             if grid_input[y - 1][x].len() != 2 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors"
+                                    ),
+                                });
                             }
 
                             r.push(double_id);
@@ -276,22 +312,40 @@ impl Grid {
                         }
                         'L' => {
                             if x == 0 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} points out of bounds"
+                                    ),
+                                });
                             }
 
                             let double_id = r[x - 1];
 
                             if grid_input[y][x - 1].len() != 2 {
-                                panic!("Error: Inconsistend Mat sizes!");
+                                return Err(GridError::InvalidMatInput {
+                                    row: y,
+                                    col: x,
+                                    detail: format!(
+                                        "Double Mat descriptor {item} has inconsistend neighbors"
+                                    ),
+                                });
                             }
 
                             r.push(double_id);
                             continue;
                         }
                         _ => {
-                            panic!("Error: Faulty Mat Input!")
+                            return Err(GridError::InvalidMatInput {
+                                row: y,
+                                col: x,
+                                detail: format!("Invalid Mat descriptor: {item}"),
+                            });
                         }
                     };
+
+                    let mat_id = mats.len();
 
                     let mat = Mat {
                         id: mat_id,
@@ -303,7 +357,7 @@ impl Grid {
                     mats.push(mat);
                     r.push(mat_id);
                 } else {
-                    let mat_id = id.next();
+                    let mat_id = mats.len();
                     let color = Color::from(item.chars().nth(0).unwrap());
                     let position = MatPostion::Singe(CellCoordinate::new(x, y));
 
@@ -320,39 +374,18 @@ impl Grid {
             grid.push(r);
         }
 
-        let delivery = Delivery::new(max_delivery_size);
-
-        Self {
+        Ok(Self {
             cells: grid,
             height,
             width,
             mats,
-            delivery,
-            build_order: Vec::new(),
             print_intervals: 2,
             section_size: 2,
-        }
+            delivery_size: max_delivery_size,
+        })
     }
 
-    fn get_mat_with_id(&self, id: MatID) -> &Mat {
-        for mat in &self.mats {
-            if mat.id == id {
-                return mat;
-            }
-        }
-        panic!("Mat doesnt Exist!");
-    }
-
-    fn get_mut_mat_with_id(&mut self, id: MatID) -> &mut Mat {
-        for mat in &mut self.mats {
-            if mat.id == id {
-                return mat;
-            }
-        }
-        panic!("Mat doesnt Exist!");
-    }
-
-    pub fn build_diagonally(&mut self) -> Vec<Section> {
+    pub fn build_diagonally(&mut self) -> Result<Vec<Section>, GridError> {
         // preprocess the double mats
         // section the mats
         // order the sections
@@ -362,19 +395,18 @@ impl Grid {
         let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
 
         for mat_id in &mat_ids {
-            let mat = self.get_mat_with_id(*mat_id);
+            let mat = &self.mats[*mat_id];
             if mat.owned {
                 continue;
             }
             if matches!(mat.position, MatPostion::Double { .. }) {
-                let section = self.set_2x1_mat(*mat_id);
+                let section = self.set_2x1_mat(*mat_id)?;
                 sections.push(section);
             }
         }
 
         for mat_id in &mat_ids {
-            let seed_mat = self.get_mut_mat_with_id(*mat_id);
-            println!("{}", seed_mat.position.first());
+            let seed_mat = &mut self.mats[*mat_id];
 
             if seed_mat.owned {
                 continue;
@@ -415,14 +447,14 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id) {
+                        if !self.is_cell_available(&seed_color, *mat_id)? {
                             expand_right = false;
                             continue 'outer;
                         }
                     }
 
                     for mat_id in &cells_to_add {
-                        let mat = self.get_mut_mat_with_id(*mat_id);
+                        let mat = &mut self.mats[*mat_id];
                         mat.owned = true;
                     }
 
@@ -445,14 +477,14 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id) {
+                        if !self.is_cell_available(&seed_color, *mat_id)? {
                             expand_down = false;
                             continue 'outer;
                         }
                     }
 
                     for mat_id in &cells_to_add {
-                        let mat = self.get_mut_mat_with_id(*mat_id);
+                        let mat = &mut self.mats[*mat_id];
                         mat.owned = true;
                     }
 
@@ -468,12 +500,13 @@ impl Grid {
                 Some(id) => *id,
             };
 
-            let last_mat = self.get_mat_with_id(mat_id);
+            let last_mat = &self.mats[mat_id];
             let s = Section {
                 color: seed_color,
                 cells: section_ids,
                 first_postion: seed_first_position,
                 last_position: *last_mat.position.first(),
+                is_double_mat: false,
             };
             sections.push(s);
             println!("{}", self);
@@ -484,65 +517,66 @@ impl Grid {
                 item.first_postion.y,
             )
         });
-        self.reset_grid();
-        sections
+        self.reset_grid()?;
+        Ok(sections)
     }
 
-    fn set_2x1_mat(&mut self, mat_id: MatID) -> Section {
-        let mat = self.get_mut_mat_with_id(mat_id);
+    fn set_2x1_mat(&mut self, mat_id: MatID) -> Result<Section, GridError> {
+        let mat = &mut self.mats[mat_id];
         let s = match mat.position {
             MatPostion::Double { first, second } => Section {
                 first_postion: first,
                 last_position: second,
                 cells: vec![mat.id],
                 color: mat.color,
+                is_double_mat: true,
             },
-            _ => panic!("Smth went wrong"),
+            _ => panic!("Called set_2x1_mat on 1x1 mat"),
         };
 
         mat.owned = true;
-        s
+        Ok(s)
     }
 
-    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> bool {
-        let mat = self.get_mat_with_id(mat_id);
-        &mat.color == color && !mat.owned
+    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> Result<bool, GridError> {
+        let mat = &self.mats[mat_id];
+        Ok(&mat.color == color && !mat.owned)
     }
 
-    fn add_to_build(&mut self, build_mats: Vec<MatID>) {
-        for mat_id in &build_mats {
-            if self.build_order.contains(mat_id) {
+    pub fn generate_deliveryies(&mut self) -> Result<Vec<Vec<Color>>, GridError> {
+        let sections = self.build_diagonally()?;
+        let mut deliveries: Vec<Vec<Color>> = Vec::new();
+        let mut current_delivery: Vec<Color> = Vec::new();
+
+        for section in sections {
+            if section.is_double_mat {
                 continue;
             }
 
-            let mat = self.get_mut_mat_with_id(*mat_id);
-            mat.owned = true;
-            self.build_order.push(*mat_id);
+            for _ in section.cells {
+                if current_delivery.len() == self.delivery_size {
+                    deliveries.push(current_delivery.clone());
+                    current_delivery.clear();
+                }
 
-            if self.build_order.len().is_multiple_of(self.print_intervals) {
-                println!("{}", self);
+                current_delivery.push(section.color);
             }
         }
-
-        let delivery_mats: Vec<Color> = build_mats
-            .into_iter()
-            .map(|mat_id| {
-                let mat = self.get_mat_with_id(mat_id);
-                mat.color
-            })
-            .collect();
-
-        self.delivery.add(delivery_mats);
+        deliveries.push(current_delivery);
+        Ok(deliveries)
     }
 
+    #[allow(dead_code)]
     pub fn set_print_intervals(&mut self, intervals: usize) {
         self.print_intervals = intervals;
     }
 
-    fn reset_grid(&mut self) {
+    fn reset_grid(&mut self) -> Result<(), GridError> {
         let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
         for mat_id in mat_ids {
-            self.get_mut_mat_with_id(mat_id).owned = false;
+            let mat = &mut self.mats[mat_id];
+            mat.owned = false;
         }
+        Ok(())
     }
 }

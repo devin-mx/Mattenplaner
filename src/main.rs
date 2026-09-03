@@ -20,12 +20,41 @@ fn main() {
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
     ];
 
-    let mut grid: Grid = Grid::new(input_grid, 10);
+    let mut grid: Grid = match Grid::new(input_grid, 10) {
+        Ok(g) => g,
+        Err(e) => {
+            println!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
 
     println!("{}", grid);
 
-    let sections = grid.build_diagonally();
+    let sections = match grid.build_diagonally() {
+        Ok(s) => s,
+        Err(e) => {
+            println!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
     for s in sections {
         println!("{s}");
+    }
+
+    println!();
+
+    let deliveries = match grid.generate_deliveryies() {
+        Ok(d) => d,
+        Err(e) => {
+            println!("Error: {e}");
+            std::process::exit(1);
+        }
+    };
+    for delivery in deliveries {
+        for c in delivery {
+            print!("{c}, ");
+        }
+        println!();
+        println!();
     }
 }
