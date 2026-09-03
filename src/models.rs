@@ -31,7 +31,6 @@ enum MatPostion {
 
 #[derive(Clone, Debug, PartialEq)]
 struct Mat {
-    id: MatID,
     position: MatPostion,
     color: Color,
     owned: bool,
@@ -65,7 +64,7 @@ impl fmt::Display for GridError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidMatInput { row, col, detail } => {
-                write!(f, "Invalid mat at ({row}, {col}): {detail} ")
+                write!(f, "Invalid mat at ({col}, {row}): {detail} ")
             }
         }
     }
@@ -348,7 +347,6 @@ impl Grid {
                     let mat_id = mats.len();
 
                     let mat = Mat {
-                        id: mat_id,
                         position,
                         color,
                         owned: false,
@@ -362,7 +360,6 @@ impl Grid {
                     let position = MatPostion::Singe(CellCoordinate::new(x, y));
 
                     let mat = Mat {
-                        id: mat_id,
                         color,
                         owned: false,
                         position,
@@ -400,7 +397,7 @@ impl Grid {
                 continue;
             }
             if matches!(mat.position, MatPostion::Double { .. }) {
-                let section = self.set_2x1_mat(*mat_id)?;
+                let section = self.set_2x1_mat(*mat_id);
                 sections.push(section);
             }
         }
@@ -427,7 +424,7 @@ impl Grid {
             let mut section_ids: Vec<MatID> = Vec::new();
 
             seed_mat.owned = true;
-            section_ids.push(seed_mat.id);
+            section_ids.push(*mat_id);
 
             'outer: while expand_right || expand_down {
                 if expand_right {
@@ -447,7 +444,7 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id)? {
+                        if !self.is_cell_available(&seed_color, *mat_id) {
                             expand_right = false;
                             continue 'outer;
                         }
@@ -477,7 +474,7 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id)? {
+                        if !self.is_cell_available(&seed_color, *mat_id) {
                             expand_down = false;
                             continue 'outer;
                         }
@@ -509,7 +506,7 @@ impl Grid {
                 is_double_mat: false,
             };
             sections.push(s);
-            println!("{}", self);
+            // println!("{}", self);
         }
         sections.sort_unstable_by_key(|item| {
             (
@@ -517,17 +514,17 @@ impl Grid {
                 item.first_postion.y,
             )
         });
-        self.reset_grid()?;
+        self.reset_grid();
         Ok(sections)
     }
 
-    fn set_2x1_mat(&mut self, mat_id: MatID) -> Result<Section, GridError> {
+    fn set_2x1_mat(&mut self, mat_id: MatID) -> Section {
         let mat = &mut self.mats[mat_id];
         let s = match mat.position {
             MatPostion::Double { first, second } => Section {
                 first_postion: first,
                 last_position: second,
-                cells: vec![mat.id],
+                cells: vec![mat_id],
                 color: mat.color,
                 is_double_mat: true,
             },
@@ -535,12 +532,12 @@ impl Grid {
         };
 
         mat.owned = true;
-        Ok(s)
+        s
     }
 
-    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> Result<bool, GridError> {
+    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> bool {
         let mat = &self.mats[mat_id];
-        Ok(&mat.color == color && !mat.owned)
+        &mat.color == color && !mat.owned
     }
 
     pub fn generate_deliveryies(&mut self) -> Result<Vec<Vec<Color>>, GridError> {
@@ -571,12 +568,9 @@ impl Grid {
         self.print_intervals = intervals;
     }
 
-    fn reset_grid(&mut self) -> Result<(), GridError> {
-        let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
-        for mat_id in mat_ids {
-            let mat = &mut self.mats[mat_id];
+    fn reset_grid(&mut self) {
+        for mat in &mut self.mats {
             mat.owned = false;
         }
-        Ok(())
     }
 }
