@@ -11,6 +11,7 @@ pub struct Grid {
     delivery_size: usize,
     height: usize,
     width: usize,
+    cache: Option<Vec<Section>>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -42,7 +43,7 @@ pub struct CellCoordinate {
     x: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Section {
     pub first_postion: CellCoordinate,
     pub last_position: CellCoordinate,
@@ -379,6 +380,7 @@ impl Grid {
             print_intervals: 2,
             section_size: 2,
             delivery_size: max_delivery_size,
+            cache: None,
         })
     }
 
@@ -506,7 +508,7 @@ impl Grid {
                 is_double_mat: false,
             };
             sections.push(s);
-            // println!("{}", self);
+            println!("{}", self);
         }
         sections.sort_unstable_by_key(|item| {
             (
@@ -515,6 +517,8 @@ impl Grid {
             )
         });
         self.reset_grid();
+        self.cache = Some(sections.clone());
+
         Ok(sections)
     }
 
@@ -541,7 +545,11 @@ impl Grid {
     }
 
     pub fn generate_deliveryies(&mut self) -> Result<Vec<Vec<Color>>, GridError> {
-        let sections = self.build_diagonally()?;
+        let sections = match &self.cache {
+            None => self.build_diagonally()?,
+            Some(sections) => sections.clone(),
+        };
+
         let mut deliveries: Vec<Vec<Color>> = Vec::new();
         let mut current_delivery: Vec<Color> = Vec::new();
 

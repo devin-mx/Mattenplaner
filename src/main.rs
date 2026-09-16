@@ -30,6 +30,8 @@ fn main() {
 
     println!("{}", grid);
 
+    println!("Sections:");
+
     let sections = match grid.build_diagonally() {
         Ok(s) => s,
         Err(e) => {
@@ -42,6 +44,8 @@ fn main() {
     }
 
     println!();
+
+    println!("Deliveries:");
 
     let deliveries = match grid.generate_deliveryies() {
         Ok(d) => d,
