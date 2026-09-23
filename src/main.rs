@@ -1,13 +1,18 @@
 mod models;
+mod reader;
+mod writer;
 
-use models::*;
+use calamine::Error;
+use reader::*;
+use writer::writer_function;
 
-fn main() {
+fn main() -> Result<(), Error> {
     // create a 9x9 array with letters blue ('B') and yellow ('Y')
     // the outer rings are blue and the middle 5x5 is yellow
     //
     // This was my first attempt to implement a Matt plan
     // kept it because it is easy to change
+    /*
     let input_grid: Vec<Vec<&str>> = vec![
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
@@ -20,7 +25,7 @@ fn main() {
         vec!["B", "B", "B", "B", "B", "B", "B", "B", "B"],
     ];
 
-    let mut grid: Grid = match Grid::new(input_grid, 10) {
+    let mut grid: Grid = match Grid::new(input_grid) {
         Ok(g) => g,
         Err(e) => {
             println!("Error: {e}");
@@ -28,11 +33,15 @@ fn main() {
         }
     };
 
-    println!("{}", grid);
+    */
+
+    let mut grid = load_grid((0, 0), (20, 35))?; // full mat
+
+    // let mut grid = load_grid((3, 3), (17, 17))?; // 1 Tatami
 
     println!("Sections:");
 
-    let sections = match grid.build_diagonally() {
+    let sections = match grid.build_diagonally(2) {
         Ok(s) => s,
         Err(e) => {
             println!("Error: {e}");
@@ -47,7 +56,7 @@ fn main() {
 
     println!("Deliveries:");
 
-    let deliveries = match grid.generate_deliveryies() {
+    let deliveries = match grid.generate_deliveries(40, 2) {
         Ok(d) => d,
         Err(e) => {
             println!("Error: {e}");
@@ -55,10 +64,20 @@ fn main() {
         }
     };
     for delivery in deliveries {
-        for c in delivery {
-            print!("{c}, ");
+        let mut counter = 0;
+
+        for (i, c) in delivery {
+            print!("{i} {c}, ");
+            counter += i;
         }
         println!();
+
+        println!("Size: {}", counter);
+
         println!();
     }
+
+    let _ = writer_function(grid);
+
+    Ok(())
 }
