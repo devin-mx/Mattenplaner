@@ -22,7 +22,7 @@ pub fn load_grid(start: (usize, usize), end: (usize, usize)) -> Result<Grid, Err
         input_grid.push(r);
     }
 
-    let grid = Grid::new(input_grid).expect("Error while creating Grid!");
+    let grid = Grid::new(&input_grid).expect("Error while creating Grid!");
 
     Ok(grid)
 }

@@ -1,5 +1,5 @@
 use colored::Colorize;
-use std::fmt;
+use std::{collections::HashSet, fmt};
 
 type MatID = usize;
 
@@ -11,22 +11,22 @@ pub struct Grid {
     cache: Option<(Vec<Section>, usize)>,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum Color {
     Blue,
     Yellow,
     None,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, Eq, Hash)]
 pub enum Layout {
     Vertical,
     Horizontal,
 }
 
-#[derive(Clone, Debug, Copy, PartialEq)]
-pub enum MatPostion {
-    Singe(CellCoordinate),
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Hash)]
+pub enum MatPosition {
+    Single(CellCoordinate),
     Double {
         first: CellCoordinate,
         second: CellCoordinate,
@@ -34,18 +34,18 @@ pub enum MatPostion {
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Mat {
-    pub position: MatPostion,
+    pub position: MatPosition,
     pub color: Color,
     pub owned: bool,
     pub id: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Copy)]
+#[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
 pub struct CellCoordinate {
-    pub y: usize,
     pub x: usize,
+    pub y: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +54,7 @@ pub struct Section {
     pub last_position: CellCoordinate,
     cells: Vec<MatID>,
     pub color: Color,
+    #[allow(dead_code)]
     is_double_mat: bool,
 }
 
@@ -76,11 +77,11 @@ impl fmt::Display for GridError {
     }
 }
 
-impl MatPostion {
+impl MatPosition {
     pub fn first(&self) -> &CellCoordinate {
         match self {
-            MatPostion::Singe(postition) => postition,
-            MatPostion::Double { first, .. } => first,
+            MatPosition::Single(postition) => postition,
+            MatPosition::Double { first, .. } => first,
         }
     }
 }
@@ -93,11 +94,11 @@ impl fmt::Display for Grid {
                 let current = CellCoordinate::new(x, y);
 
                 let cell_text = match &mat.position {
-                    MatPostion::Singe(..) => {
+                    MatPosition::Single(..) => {
                         format!("[{}] ", mat.color)
                     }
 
-                    MatPostion::Double { first, second, .. } if first.y == second.y => {
+                    MatPosition::Double { first, second, .. } if first.y == second.y => {
                         if &current == first {
                             format!("[{}--", mat.color)
                         } else if &current == second {
@@ -107,7 +108,7 @@ impl fmt::Display for Grid {
                         }
                     }
 
-                    MatPostion::Double { first, second, .. } if first.x == second.x => {
+                    MatPosition::Double { first, second, .. } if first.x == second.x => {
                         if &current == first {
                             format!("┌{}┐ ", mat.color)
                         } else if &current == second {
@@ -117,7 +118,7 @@ impl fmt::Display for Grid {
                         }
                     }
 
-                    MatPostion::Double { .. } => return Err(fmt::Error),
+                    MatPosition::Double { .. } => return Err(fmt::Error),
                 };
 
                 mat.write_mat(f, &cell_text)?;
@@ -144,7 +145,7 @@ impl fmt::Display for Section {
             "Color: {}; from {}, to {}",
             self.color, self.first_postion, self.last_position
         );
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -161,13 +162,13 @@ impl From<char> for Color {
 impl Mat {
     fn write_mat(&self, f: &mut fmt::Formatter<'_>, text: &str) -> fmt::Result {
         if !self.owned {
-            return write!(f, "{}", text);
+            return write!(f, "{text}");
         }
 
         match self.color {
             Color::Blue => write!(f, "{}", text.truecolor(0, 55, 200)),
             Color::Yellow => write!(f, "{}", text.truecolor(255, 255, 0)),
-            Color::None => write!(f, "{}", text),
+            Color::None => write!(f, "{text}"),
         }
     }
 }
@@ -185,7 +186,7 @@ impl CellCoordinate {
 }
 
 impl Grid {
-    pub fn new(grid_input: Vec<Vec<String>>) -> Result<Self, GridError> {
+    pub fn new(grid_input: &[Vec<String>]) -> Result<Self, GridError> {
         let height: usize = grid_input.len();
         let width: usize = if height > 0 { grid_input[0].len() } else { 0 };
 
@@ -206,7 +207,7 @@ impl Grid {
                 if item.len() == 2 {
                     let color = Color::from(item.chars().nth(0).unwrap());
 
-                    let position: MatPostion = match item.chars().nth(1).unwrap() {
+                    let position: MatPosition = match item.chars().nth(1).unwrap() {
                         'R' => {
                             if x + 1 >= width {
                                 return Err(GridError::InvalidMatInput {
@@ -243,7 +244,7 @@ impl Grid {
                                     ),
                                 });
                             }
-                            MatPostion::Double {
+                            MatPosition::Double {
                                 first: CellCoordinate::new(x, y),
                                 second: CellCoordinate::new(x + 1, y),
                                 layout: Layout::Horizontal,
@@ -285,7 +286,7 @@ impl Grid {
                                     ),
                                 });
                             }
-                            MatPostion::Double {
+                            MatPosition::Double {
                                 first: CellCoordinate::new(x, y),
                                 second: CellCoordinate::new(x, y + 1),
                                 layout: Layout::Vertical,
@@ -366,7 +367,7 @@ impl Grid {
                 } else {
                     let mat_id = mats.len();
                     let color = Color::from(item.chars().nth(0).unwrap());
-                    let position = MatPostion::Singe(CellCoordinate::new(x, y));
+                    let position = MatPosition::Single(CellCoordinate::new(x, y));
 
                     let mat = Mat {
                         color,
@@ -404,7 +405,7 @@ impl Grid {
             if mat.owned {
                 continue;
             }
-            if matches!(mat.position, MatPostion::Double { .. }) {
+            if matches!(mat.position, MatPosition::Double { .. }) {
                 let section = self.set_2x1_mat(*mat_id);
                 sections.push(section);
             }
@@ -452,7 +453,7 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id) {
+                        if !self.is_cell_available(seed_color, *mat_id) {
                             expand_right = false;
                             continue 'outer;
                         }
@@ -482,7 +483,7 @@ impl Grid {
                     }
 
                     for mat_id in &cells_to_add {
-                        if !self.is_cell_available(&seed_color, *mat_id) {
+                        if !self.is_cell_available(seed_color, *mat_id) {
                             expand_down = false;
                             continue 'outer;
                         }
@@ -521,7 +522,8 @@ impl Grid {
                 item.first_postion.y,
             )
         });
-        println!("{}", self);
+
+        println!("{self}");
         self.reset_grid();
         self.cache = Some((sections.clone(), section_size));
 
@@ -532,28 +534,24 @@ impl Grid {
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<Mat>>, GridError> {
+    ) -> Result<Vec<Vec<Vec<Mat>>>, GridError> {
         let deliveries = self.generate_deliveries(delivery_size, section_size)?;
 
-        let mut pages = Vec::new();
+        let mut out = Vec::new();
 
         for delivery in deliveries {
-            let grouped_mat_ids: Vec<Vec<MatID>> = delivery
-                .chunk_by(|a, b| self.mats[*a].color == self.mats[*b].color)
-                .map(|slice| slice.to_vec())
-                .collect();
-
-            for group in grouped_mat_ids {
-                let page = self.page_builder(group);
-                pages.push(page);
+            let mut groups = Vec::new();
+            for group in self.group_adjacent(&delivery) {
+                groups.push(self.page_builder(&group));
             }
+            let _comp = self.compress_delivery(&delivery);
+            out.push(groups);
         }
-
-        Ok(pages)
+        Ok(out)
     }
 
-    fn page_builder(&mut self, mats: Vec<MatID>) -> Vec<Mat> {
-        for id in mats {
+    fn page_builder(&mut self, mats: &[MatID]) -> Vec<Mat> {
+        for &id in mats {
             self.mats[id].owned = true;
         }
         let out = self.mats.clone();
@@ -564,23 +562,23 @@ impl Grid {
     fn set_2x1_mat(&mut self, mat_id: MatID) -> Section {
         let mat = &mut self.mats[mat_id];
         let s = match mat.position {
-            MatPostion::Double { first, second, .. } => Section {
+            MatPosition::Double { first, second, .. } => Section {
                 first_postion: first,
                 last_position: second,
                 cells: vec![mat_id],
                 color: mat.color,
                 is_double_mat: true,
             },
-            _ => panic!("Called set_2x1_mat on 1x1 mat"),
+            MatPosition::Single(..) => panic!("Called set_2x1_mat on 1x1 mat"),
         };
 
         mat.owned = true;
         s
     }
 
-    fn is_cell_available(&self, color: &Color, mat_id: MatID) -> bool {
+    fn is_cell_available(&self, color: Color, mat_id: MatID) -> bool {
         let mat = &self.mats[mat_id];
-        &mat.color == color && !mat.owned
+        mat.color == color && !mat.owned
     }
 
     pub fn generate_deliveries(
@@ -603,10 +601,6 @@ impl Grid {
         let mut current_delivery = Vec::new();
 
         for section in sections {
-            if section.is_double_mat {
-                continue;
-            }
-
             for mat in section.cells {
                 if current_delivery.len() == delivery_size {
                     deliveries.push(current_delivery.clone());
@@ -619,6 +613,77 @@ impl Grid {
         deliveries.push(current_delivery);
 
         Ok(deliveries)
+    }
+
+    fn group_adjacent(&self, delivery: &[MatID]) -> Vec<Vec<MatID>> {
+        let in_delivery: HashSet<MatID> = delivery.iter().copied().collect();
+        let mut visited: HashSet<MatID> = HashSet::new();
+        let mut groups = Vec::new();
+
+        for &start in delivery {
+            if !visited.insert(start) {
+                continue;
+            }
+
+            let color = self.mats[start].color;
+            let mut stack = vec![start];
+            let mut group = Vec::new();
+
+            while let Some(id) = stack.pop() {
+                group.push(id);
+                for n in self.neighbor_mats(id) {
+                    if self.mats[n].color == color && in_delivery.contains(&n) && visited.insert(n)
+                    {
+                        stack.push(n);
+                    }
+                }
+            }
+            groups.push(group);
+        }
+        groups
+    }
+
+    fn neighbor_mats(&self, id: MatID) -> Vec<MatID> {
+        let pos = self.mats[id].position.first();
+        let (x, y) = (pos.x, pos.y);
+        let mut out = Vec::with_capacity(4);
+
+        if let Some(next_y) = y.checked_sub(1) {
+            out.push(self.cells[next_y][x]);
+        }
+        if y + 1 < self.height {
+            out.push(self.cells[y + 1][x]);
+        }
+        if let Some(next_x) = x.checked_sub(1) {
+            out.push(self.cells[y][next_x]);
+        }
+        if x + 1 < self.width {
+            out.push(self.cells[y][x + 1]);
+        }
+        out
+    }
+
+    #[allow(dead_code)]
+    fn compress_delivery(&self, delivery: &[MatID]) -> Vec<(u8, Color)> {
+        let mut out = Vec::new();
+        let mut color: Option<Color> = None;
+        let mut count = 0;
+        for id in delivery {
+            let mat = &self.mats[*id];
+
+            if color.is_none() {
+                color = Some(mat.color);
+            }
+
+            if color.unwrap() != mat.color {
+                out.push((count, color.unwrap()));
+                color = Some(mat.color);
+                count = 0;
+            }
+            count += 1;
+        }
+        out.push((count, color.unwrap()));
+        out
     }
 
     fn reset_grid(&mut self) {
