@@ -2,22 +2,29 @@ mod models;
 mod reader;
 mod writer;
 
-use std::process::exit;
+use anyhow::Result;
+use reader::load_floor_plan_excel;
+use writer::write_output_excel;
 
-use calamine::Error;
-use reader::*;
-use writer::writer_function;
+fn main() -> Result<()> {
+    const DELIVERY_SIZE: usize = 40;
+    const SECTIONING_SIZE: usize = 2;
+    const OUTPUT_FILE_NAME: &str = "Bob";
 
-fn main() -> Result<(), Error> {
-    let mut grid = load_grid((0, 0), (20, 35))?; // full mat
+    // let mut floor_plan = load_floor_plan_excel((0, 0), (20, 35))?; // full mat
+    // Do not use! Currently too big for excel
 
-    // let mut grid = load_grid((3, 3), (17, 17))?; // 1 Tatami
+    let mut floor_plan = load_floor_plan_excel((3, 3), (17, 17))?; // 1 Tatami
+    floor_plan.print_to_terminal();
 
-    let pages = match grid.print_pages(40, 2) {
-        Ok(pages) => pages,
-        Err(_) => exit(1),
-    };
+    // TODO: separate floor plan into individual Tatami
 
-    let _ = writer_function(&pages, "David");
+    // floor_plan would be replaced with tatami
+
+    let _deliveries = floor_plan.generate_deliveries(DELIVERY_SIZE, SECTIONING_SIZE)?;
+
+    let pages = floor_plan.generate_pages(DELIVERY_SIZE, SECTIONING_SIZE)?;
+
+    write_output_excel(&pages, OUTPUT_FILE_NAME)?;
     Ok(())
 }

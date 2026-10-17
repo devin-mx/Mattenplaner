@@ -1,7 +1,10 @@
-use crate::models::Grid;
+use crate::models::FloorPlan;
 use calamine::{Data, Error, Reader, Xlsx, open_workbook};
 
-pub fn load_grid(start: (usize, usize), end: (usize, usize)) -> Result<Grid, Error> {
+pub fn load_floor_plan_excel(
+    start: (usize, usize),
+    end: (usize, usize),
+) -> Result<FloorPlan, Error> {
     let base: (usize, usize) = (11, 3);
 
     let mut wb: Xlsx<_> = open_workbook("excel_data/input.xlsx").unwrap();
@@ -22,7 +25,7 @@ pub fn load_grid(start: (usize, usize), end: (usize, usize)) -> Result<Grid, Err
         input_grid.push(r);
     }
 
-    let grid = Grid::new(&input_grid).expect("Error while creating Grid!");
+    let grid = FloorPlan::new(&input_grid).expect("Error while creating Grid!");
 
     Ok(grid)
 }

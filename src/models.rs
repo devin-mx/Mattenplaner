@@ -1,14 +1,21 @@
+use anyhow::Result;
 use colored::Colorize;
 use std::{collections::HashSet, fmt};
 
 type MatID = usize;
 
-pub struct Grid {
+pub struct FloorPlan {
     cells: Vec<Vec<MatID>>,
-    pub mats: Vec<Mat>,
+    pub mats: Vec<MatTile>,
     height: usize,
     width: usize,
     cache: Option<(Vec<Section>, usize)>,
+}
+
+#[allow(dead_code)]
+pub struct Tatami {
+    cells: Vec<Vec<MatID>>,
+    pub mats: Vec<MatTile>,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
@@ -35,7 +42,7 @@ pub enum MatPosition {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Mat {
+pub struct MatTile {
     pub position: MatPosition,
     pub color: Color,
     pub owned: bool,
@@ -58,23 +65,14 @@ pub struct Section {
     is_double_mat: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum GridError {
+    #[error("Invalid mat at ({col}, {row}): {detail}")]
     InvalidMatInput {
         row: usize,
         col: usize,
         detail: String,
     },
-}
-
-impl fmt::Display for GridError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidMatInput { row, col, detail } => {
-                write!(f, "Invalid mat at ({col}, {row}): {detail} ")
-            }
-        }
-    }
 }
 
 impl MatPosition {
@@ -86,7 +84,7 @@ impl MatPosition {
     }
 }
 
-impl fmt::Display for Grid {
+impl fmt::Display for FloorPlan {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (y, row) in self.cells.iter().enumerate() {
             for (x, mat_id) in row.iter().enumerate() {
@@ -159,11 +157,13 @@ impl From<char> for Color {
     }
 }
 
-impl Mat {
+impl MatTile {
     fn write_mat(&self, f: &mut fmt::Formatter<'_>, text: &str) -> fmt::Result {
+        /*
         if !self.owned {
             return write!(f, "{text}");
         }
+        */
 
         match self.color {
             Color::Blue => write!(f, "{}", text.truecolor(0, 55, 200)),
@@ -185,13 +185,13 @@ impl CellCoordinate {
     }
 }
 
-impl Grid {
+impl FloorPlan {
     pub fn new(grid_input: &[Vec<String>]) -> Result<Self, GridError> {
         let height: usize = grid_input.len();
         let width: usize = if height > 0 { grid_input[0].len() } else { 0 };
 
         let mut grid: Vec<Vec<MatID>> = Vec::new();
-        let mut mats: Vec<Mat> = Vec::new();
+        let mut mats: Vec<MatTile> = Vec::new();
 
         for (y, row) in grid_input.iter().enumerate() {
             let mut r = Vec::new();
@@ -355,7 +355,7 @@ impl Grid {
 
                     let mat_id = mats.len();
 
-                    let mat = Mat {
+                    let mat = MatTile {
                         position,
                         color,
                         owned: false,
@@ -369,7 +369,7 @@ impl Grid {
                     let color = Color::from(item.chars().nth(0).unwrap());
                     let position = MatPosition::Single(CellCoordinate::new(x, y));
 
-                    let mat = Mat {
+                    let mat = MatTile {
                         color,
                         owned: false,
                         position,
@@ -391,7 +391,7 @@ impl Grid {
         })
     }
 
-    pub fn build_diagonally(&mut self, section_size: usize) -> Result<Vec<Section>, GridError> {
+    pub fn build_diagonally(&mut self, section_size: usize) -> Result<Vec<Section>> {
         // preprocess the double mats
         // section the mats
         // order the sections
@@ -523,34 +523,32 @@ impl Grid {
             )
         });
 
-        println!("{self}");
         self.reset_grid();
         self.cache = Some((sections.clone(), section_size));
 
         Ok(sections)
     }
 
-    pub fn print_pages(
+    pub fn generate_pages(
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<Vec<Mat>>>, GridError> {
-        let deliveries = self.generate_deliveries(delivery_size, section_size)?;
+    ) -> Result<Vec<Vec<MatTile>>> {
+        let deliveries = self.separate_by_deliveries(delivery_size, section_size)?;
 
         let mut out = Vec::new();
-
         for delivery in deliveries {
             let mut groups = Vec::new();
             for group in self.group_adjacent(&delivery) {
                 groups.push(self.page_builder(&group));
             }
-            let _comp = self.compress_delivery(&delivery);
-            out.push(groups);
+            // let _comp = self.compress_delivery(&delivery);
+            out.extend(groups);
         }
         Ok(out)
     }
 
-    fn page_builder(&mut self, mats: &[MatID]) -> Vec<Mat> {
+    fn page_builder(&mut self, mats: &[MatID]) -> Vec<MatTile> {
         for &id in mats {
             self.mats[id].owned = true;
         }
@@ -585,33 +583,54 @@ impl Grid {
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<MatID>>, GridError> {
-        let sections = match &self.cache {
-            None => self.build_diagonally(section_size)?,
-            Some(sections) => {
-                if sections.1 == section_size {
-                    sections.0.clone()
-                } else {
-                    self.build_diagonally(section_size)?
-                }
-            }
-        };
+    ) -> Result<Vec<Vec<MatID>>> {
+        let sections = self.check_cache_or_build_diagonally(section_size)?;
 
         let mut deliveries: Vec<Vec<MatID>> = Vec::new();
         let mut current_delivery = Vec::new();
 
         for section in sections {
-            for mat in section.cells {
-                if current_delivery.len() == delivery_size {
-                    deliveries.push(current_delivery.clone());
-                    current_delivery.clear();
-                }
+            if section.is_double_mat {
+                continue;
+            }
 
-                current_delivery.push(mat);
+            for mat_id in section.cells {
+                if current_delivery.len() == delivery_size {
+                    deliveries.push(std::mem::take(&mut current_delivery));
+                }
+                current_delivery.push(mat_id);
             }
         }
         deliveries.push(current_delivery);
+        Ok(deliveries)
+    }
 
+    fn separate_by_deliveries(
+        &mut self,
+        delivery_size: usize,
+        section_size: usize,
+    ) -> Result<Vec<Vec<MatID>>> {
+        let sections = self.check_cache_or_build_diagonally(section_size)?;
+
+        let mut deliveries: Vec<Vec<MatID>> = Vec::new();
+        let mut current_delivery = Vec::new();
+
+        let mut current_size = 0;
+        for section in sections {
+            for mat_id in section.cells {
+                if current_size == delivery_size {
+                    deliveries.push(std::mem::take(&mut current_delivery));
+                    current_size = 0;
+                }
+                current_delivery.push(mat_id);
+
+                if section.is_double_mat {
+                    continue;
+                }
+                current_size += 1;
+            }
+        }
+        deliveries.push(current_delivery);
         Ok(deliveries)
     }
 
@@ -631,10 +650,19 @@ impl Grid {
 
             while let Some(id) = stack.pop() {
                 group.push(id);
-                for n in self.neighbor_mats(id) {
-                    if self.mats[n].color == color && in_delivery.contains(&n) && visited.insert(n)
-                    {
-                        stack.push(n);
+                let positions = match self.mats[id].position {
+                    MatPosition::Single(pos) => vec![pos],
+                    MatPosition::Double { first, second, .. } => vec![first, second],
+                };
+
+                for pos in positions {
+                    for n in self.neighbor_mats(pos.x, pos.y) {
+                        if self.mats[n].color == color
+                            && in_delivery.contains(&n)
+                            && visited.insert(n)
+                        {
+                            stack.push(n);
+                        }
                     }
                 }
             }
@@ -643,9 +671,7 @@ impl Grid {
         groups
     }
 
-    fn neighbor_mats(&self, id: MatID) -> Vec<MatID> {
-        let pos = self.mats[id].position.first();
-        let (x, y) = (pos.x, pos.y);
+    fn neighbor_mats(&self, x: usize, y: usize) -> Vec<MatID> {
         let mut out = Vec::with_capacity(4);
 
         if let Some(next_y) = y.checked_sub(1) {
@@ -660,6 +686,7 @@ impl Grid {
         if x + 1 < self.width {
             out.push(self.cells[y][x + 1]);
         }
+
         out
     }
 
@@ -690,5 +717,23 @@ impl Grid {
         for mat in &mut self.mats {
             mat.owned = false;
         }
+    }
+
+    fn check_cache_or_build_diagonally(&mut self, section_size: usize) -> Result<Vec<Section>> {
+        let sections = match &self.cache {
+            None => self.build_diagonally(section_size)?,
+            Some(sections) => {
+                if sections.1 == section_size {
+                    sections.0.clone()
+                } else {
+                    self.build_diagonally(section_size)?
+                }
+            }
+        };
+        Ok(sections)
+    }
+
+    pub fn print_to_terminal(&self) {
+        println!("{self}");
     }
 }

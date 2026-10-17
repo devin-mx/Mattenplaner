@@ -1,9 +1,7 @@
-use std::error::Error;
-
-use crate::models::{Color, Layout, Mat, MatPosition};
-use anyhow::Result;
+use crate::models::{Color, Layout, MatPosition, MatTile};
+use anyhow::{Ok, Result};
 use rust_xlsxwriter::FormatBorder::Medium;
-use rust_xlsxwriter::{Format, XlsxError, workbook::Workbook};
+use rust_xlsxwriter::{Format, Worksheet, workbook::Workbook};
 
 fn format_builder(color: &str, top: bool, bottom: bool, left: bool, right: bool) -> Format {
     let mut f = Format::new()
@@ -57,74 +55,80 @@ fn washed(color: &str, factor: f32) -> String {
     color
 }
 
-pub fn writer_function(pages: &[Vec<Vec<Mat>>], name: &str) -> Result<()> {
-    let mut workbook = Workbook::new();
-    let worksheet = workbook.add_worksheet();
-
-    for i in 0..(pages.len() * pages[0][0].len()) as u16 {
+fn set_cell_shape_to_square(worksheet: &mut Worksheet, length: u16) -> Result<()> {
+    for i in 0..length {
         worksheet.set_column_width_pixels(i, 38)?;
         worksheet.set_row_height_pixels(i as u32, 38)?;
     }
+    Ok(())
+}
 
-    let mut count = 0;
-    for section in pages {
-        for mats in section {
-            let offset = count * (mats.len().isqrt() + 5);
+fn print_tatami_on_worksheet(
+    worksheet: &mut Worksheet,
+    offset: usize,
+    mats: &[MatTile],
+) -> Result<()> {
+    for mat in mats {
+        let (text, mut single_color, mut double_color) = match mat.color {
+            Color::Yellow => ("Y", "#FFFF00".to_string(), "#D5B60A".to_string()),
+            Color::Blue => ("B", "#1D4ED8".to_string(), "#1E3A8A".to_string()),
+            Color::None => continue,
+        };
 
-            for mat in mats {
-                let (text, mut single_color, mut double_color) = match mat.color {
-                    Color::Yellow => ("Y", "#FFFF00".to_string(), "#D5B60A".to_string()),
-                    Color::Blue => ("B", "#1D4ED8".to_string(), "#1E3A8A".to_string()),
-                    Color::None => continue,
-                };
-
-                if !mat.owned {
-                    single_color = washed(&single_color, 0.75);
-                    double_color = washed(&double_color, 0.75);
-                }
-
-                match mat.position {
-                    MatPosition::Single(pos) => {
-                        let fmt = format_builder(&single_color, true, true, true, true);
-                        worksheet.write_with_format(
-                            (pos.y + offset) as u32,
-                            pos.x as u16,
-                            text,
-                            &fmt,
-                        )?;
-                    }
-                    MatPosition::Double {
-                        first,
-                        second,
-                        layout,
-                    } => {
-                        let (first_fmt, second_fmt) = match layout {
-                            Layout::Horizontal => (
-                                format_builder(&double_color, true, true, true, false),
-                                format_builder(&double_color, true, true, false, true),
-                            ),
-                            Layout::Vertical => (
-                                format_builder(&double_color, true, false, true, true),
-                                format_builder(&double_color, false, true, true, true),
-                            ),
-                        };
-                        worksheet.write_with_format(
-                            (first.y + offset) as u32,
-                            first.x as u16,
-                            text,
-                            &first_fmt,
-                        )?;
-                        worksheet.write_with_format(
-                            (second.y + offset) as u32,
-                            second.x as u16,
-                            text,
-                            &second_fmt,
-                        )?;
-                    }
-                }
-            }
-            count += 1;
+        if !mat.owned {
+            single_color = washed(&single_color, 0.75);
+            double_color = washed(&double_color, 0.75);
         }
+
+        match mat.position {
+            MatPosition::Single(pos) => {
+                let fmt = format_builder(&single_color, true, true, true, true);
+                worksheet.write_with_format((pos.y + offset) as u32, pos.x as u16, text, &fmt)?;
+            }
+            MatPosition::Double {
+                first,
+                second,
+                layout,
+            } => {
+                let (first_fmt, second_fmt) = match layout {
+                    Layout::Horizontal => (
+                        format_builder(&double_color, true, true, true, false),
+                        format_builder(&double_color, true, true, false, true),
+                    ),
+                    Layout::Vertical => (
+                        format_builder(&double_color, true, false, true, true),
+                        format_builder(&double_color, false, true, true, true),
+                    ),
+                };
+                worksheet.write_with_format(
+                    (first.y + offset) as u32,
+                    first.x as u16,
+                    text,
+                    &first_fmt,
+                )?;
+                worksheet.write_with_format(
+                    (second.y + offset) as u32,
+                    second.x as u16,
+                    text,
+                    &second_fmt,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn write_output_excel(pages: &[Vec<MatTile>], name: &str) -> Result<()> {
+    let mut workbook = Workbook::new();
+    let worksheet = workbook.add_worksheet();
+
+    let length = u16::try_from(pages.len() * pages[0].len())?;
+
+    set_cell_shape_to_square(worksheet, length)?;
+
+    for (count, mats) in pages.iter().enumerate() {
+        let offset = count * (mats.len().isqrt() + 5);
+        print_tatami_on_worksheet(worksheet, offset, mats)?;
     }
 
     let path_out = format!("excel_data/output-{name}.xlsx");
