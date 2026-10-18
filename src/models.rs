@@ -391,7 +391,7 @@ impl FloorPlan {
         })
     }
 
-    pub fn build_diagonally(&mut self, section_size: usize) -> Result<Vec<Section>> {
+    pub fn build_diagonally(&mut self, section_size: usize) -> Vec<Section> {
         // preprocess the double mats
         // section the mats
         // order the sections
@@ -526,15 +526,15 @@ impl FloorPlan {
         self.reset_grid();
         self.cache = Some((sections.clone(), section_size));
 
-        Ok(sections)
+        sections
     }
 
     pub fn generate_pages(
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<MatTile>>> {
-        let deliveries = self.separate_by_deliveries(delivery_size, section_size)?;
+    ) -> Vec<Vec<MatTile>> {
+        let deliveries = self.separate_by_deliveries(delivery_size, section_size);
 
         let mut out = Vec::new();
         for delivery in deliveries {
@@ -545,7 +545,7 @@ impl FloorPlan {
             // let _comp = self.compress_delivery(&delivery);
             out.extend(groups);
         }
-        Ok(out)
+        out
     }
 
     fn page_builder(&mut self, mats: &[MatID]) -> Vec<MatTile> {
@@ -583,8 +583,8 @@ impl FloorPlan {
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<MatID>>> {
-        let sections = self.check_cache_or_build_diagonally(section_size)?;
+    ) -> Vec<Vec<MatID>> {
+        let sections = self.check_cache_or_build_diagonally(section_size);
 
         let mut deliveries: Vec<Vec<MatID>> = Vec::new();
         let mut current_delivery = Vec::new();
@@ -602,15 +602,15 @@ impl FloorPlan {
             }
         }
         deliveries.push(current_delivery);
-        Ok(deliveries)
+        deliveries
     }
 
     fn separate_by_deliveries(
         &mut self,
         delivery_size: usize,
         section_size: usize,
-    ) -> Result<Vec<Vec<MatID>>> {
-        let sections = self.check_cache_or_build_diagonally(section_size)?;
+    ) -> Vec<Vec<MatID>> {
+        let sections = self.check_cache_or_build_diagonally(section_size);
 
         let mut deliveries: Vec<Vec<MatID>> = Vec::new();
         let mut current_delivery = Vec::new();
@@ -631,7 +631,7 @@ impl FloorPlan {
             }
         }
         deliveries.push(current_delivery);
-        Ok(deliveries)
+        deliveries
     }
 
     fn group_adjacent(&self, delivery: &[MatID]) -> Vec<Vec<MatID>> {
@@ -719,18 +719,17 @@ impl FloorPlan {
         }
     }
 
-    fn check_cache_or_build_diagonally(&mut self, section_size: usize) -> Result<Vec<Section>> {
-        let sections = match &self.cache {
-            None => self.build_diagonally(section_size)?,
+    fn check_cache_or_build_diagonally(&mut self, section_size: usize) -> Vec<Section> {
+        match &self.cache {
+            None => self.build_diagonally(section_size),
             Some(sections) => {
                 if sections.1 == section_size {
                     sections.0.clone()
                 } else {
-                    self.build_diagonally(section_size)?
+                    self.build_diagonally(section_size)
                 }
             }
-        };
-        Ok(sections)
+        }
     }
 
     pub fn print_to_terminal(&self) {

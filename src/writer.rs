@@ -3,21 +3,29 @@ use anyhow::{Ok, Result};
 use rust_xlsxwriter::FormatBorder::Medium;
 use rust_xlsxwriter::{Format, Worksheet, workbook::Workbook};
 
-fn format_builder(color: &str, top: bool, bottom: bool, left: bool, right: bool) -> Format {
+#[allow(clippy::struct_excessive_bools)]
+struct Borders {
+    top: bool,
+    bottom: bool,
+    left: bool,
+    right: bool,
+}
+
+fn format_builder(color: &str, borders: &Borders) -> Format {
     let mut f = Format::new()
         .set_font_color(color)
         .set_background_color(color);
 
-    if top {
+    if borders.top {
         f = f.set_border_top(Medium);
     }
-    if bottom {
+    if borders.bottom {
         f = f.set_border_bottom(Medium);
     }
-    if left {
+    if borders.left {
         f = f.set_border_left(Medium);
     }
-    if right {
+    if borders.right {
         f = f.set_border_right(Medium);
     }
 
@@ -29,28 +37,37 @@ fn washed(color: &str, factor: f32) -> String {
     let factor = factor.clamp(0.0, 1.0);
 
     // 1. Extract and normalize to 0.0 - 1.0
-    let r = ((hex >> 16) & 0xFF) as f32 / 255.0;
-    let g = ((hex >> 8) & 0xFF) as f32 / 255.0;
-    let b = (hex & 0xFF) as f32 / 255.0;
+
+    let [_, r, g, b] = hex.to_be_bytes();
+
+    let red = f32::from(r) / 255.0;
+    let green = f32::from(g) / 255.0;
+    let blue = f32::from(b) / 255.0;
 
     // 2. Decode sRGB to Linear RGB (remove gamma compression)
-    let r_lin = r.powf(2.2);
-    let g_lin = g.powf(2.2);
-    let b_lin = b.powf(2.2);
+    let red_lin = red.powf(2.2);
+    let green_lin = green.powf(2.2);
+    let blue_lin = blue.powf(2.2);
 
     // 3. Mix with pure white (1.0) in linear space
-    let new_r_lin = r_lin + (1.0 - r_lin) * factor;
-    let new_g_lin = g_lin + (1.0 - g_lin) * factor;
-    let new_b_lin = b_lin + (1.0 - b_lin) * factor;
+    let new_red_lin = red_lin + (1.0 - red_lin) * factor;
+    let new_green_lin = green_lin + (1.0 - green_lin) * factor;
+    let new_blue_lin = blue_lin + (1.0 - blue_lin) * factor;
 
     // 4. Encode back to sRGB (apply gamma compression)
     let gamma_inv = 1.0 / 2.2;
-    let new_r = (new_r_lin.powf(gamma_inv) * 255.0).round() as u32;
-    let new_g = (new_g_lin.powf(gamma_inv) * 255.0).round() as u32;
-    let new_b = (new_b_lin.powf(gamma_inv) * 255.0).round() as u32;
+
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let new_red = (new_red_lin.powf(gamma_inv) * 255.0).round() as u32;
+
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let new_green = (new_green_lin.powf(gamma_inv) * 255.0).round() as u32;
+
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let new_blue = (new_blue_lin.powf(gamma_inv) * 255.0).round() as u32;
 
     // Repack
-    let hex = (new_r << 16) | (new_g << 8) | new_b;
+    let hex = (new_red << 16) | (new_green << 8) | new_blue;
     let color = format!("#{hex:06X}");
     color
 }
@@ -58,7 +75,7 @@ fn washed(color: &str, factor: f32) -> String {
 fn set_cell_shape_to_square(worksheet: &mut Worksheet, length: u16) -> Result<()> {
     for i in 0..length {
         worksheet.set_column_width_pixels(i, 38)?;
-        worksheet.set_row_height_pixels(i as u32, 38)?;
+        worksheet.set_row_height_pixels(u32::from(i), 38)?;
     }
     Ok(())
 }
@@ -82,8 +99,21 @@ fn print_tatami_on_worksheet(
 
         match mat.position {
             MatPosition::Single(pos) => {
-                let fmt = format_builder(&single_color, true, true, true, true);
-                worksheet.write_with_format((pos.y + offset) as u32, pos.x as u16, text, &fmt)?;
+                let fmt = format_builder(
+                    &single_color,
+                    &Borders {
+                        top: true,
+                        bottom: true,
+                        left: true,
+                        right: true,
+                    },
+                );
+                worksheet.write_with_format(
+                    u32::try_from(pos.y + offset)?,
+                    u16::try_from(pos.x)?,
+                    text,
+                    &fmt,
+                )?;
             }
             MatPosition::Double {
                 first,
@@ -92,23 +122,55 @@ fn print_tatami_on_worksheet(
             } => {
                 let (first_fmt, second_fmt) = match layout {
                     Layout::Horizontal => (
-                        format_builder(&double_color, true, true, true, false),
-                        format_builder(&double_color, true, true, false, true),
+                        format_builder(
+                            &double_color,
+                            &Borders {
+                                top: true,
+                                bottom: true,
+                                left: true,
+                                right: false,
+                            },
+                        ),
+                        format_builder(
+                            &double_color,
+                            &Borders {
+                                top: true,
+                                bottom: true,
+                                left: false,
+                                right: true,
+                            },
+                        ),
                     ),
                     Layout::Vertical => (
-                        format_builder(&double_color, true, false, true, true),
-                        format_builder(&double_color, false, true, true, true),
+                        format_builder(
+                            &double_color,
+                            &Borders {
+                                top: true,
+                                bottom: false,
+                                left: true,
+                                right: true,
+                            },
+                        ),
+                        format_builder(
+                            &double_color,
+                            &Borders {
+                                top: false,
+                                bottom: true,
+                                left: true,
+                                right: true,
+                            },
+                        ),
                     ),
                 };
                 worksheet.write_with_format(
-                    (first.y + offset) as u32,
-                    first.x as u16,
+                    u32::try_from(first.y + offset)?,
+                    u16::try_from(first.x)?,
                     text,
                     &first_fmt,
                 )?;
                 worksheet.write_with_format(
-                    (second.y + offset) as u32,
-                    second.x as u16,
+                    u32::try_from(second.y + offset)?,
+                    u16::try_from(second.x)?,
                     text,
                     &second_fmt,
                 )?;

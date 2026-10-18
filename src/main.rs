@@ -21,9 +21,9 @@ fn main() -> Result<()> {
 
     // floor_plan would be replaced with tatami
 
-    let _deliveries = floor_plan.generate_deliveries(DELIVERY_SIZE, SECTIONING_SIZE)?;
+    let _deliveries = floor_plan.generate_deliveries(DELIVERY_SIZE, SECTIONING_SIZE);
 
-    let pages = floor_plan.generate_pages(DELIVERY_SIZE, SECTIONING_SIZE)?;
+    let pages = floor_plan.generate_pages(DELIVERY_SIZE, SECTIONING_SIZE);
 
     write_output_excel(&pages, OUTPUT_FILE_NAME)?;
     Ok(())
