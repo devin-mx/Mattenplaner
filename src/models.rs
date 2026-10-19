@@ -1,13 +1,13 @@
 use anyhow::Result;
 use colored::Colorize;
-use std::{collections::HashSet, fmt};
+use std::{collections::HashSet, fmt, hash::Hash};
 
 type MatID = usize;
 
 pub struct FloorPlan {
     cells: Vec<Vec<MatID>>,
     pub mats: Vec<MatTile>,
-    height: usize,
+    pub height: usize,
     width: usize,
     cache: Option<(Vec<Section>, usize)>,
 }
@@ -57,7 +57,7 @@ pub struct CellCoordinate {
 
 #[derive(Debug, Clone)]
 pub struct Section {
-    pub first_postion: CellCoordinate,
+    pub first_position: CellCoordinate,
     pub last_position: CellCoordinate,
     cells: Vec<MatID>,
     pub color: Color,
@@ -141,7 +141,7 @@ impl fmt::Display for Section {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = format!(
             "Color: {}; from {}, to {}",
-            self.color, self.first_postion, self.last_position
+            self.color, self.first_position, self.last_position
         );
         write!(f, "{s}")
     }
@@ -391,49 +391,39 @@ impl FloorPlan {
         })
     }
 
-    pub fn build_diagonally(&mut self, section_size: usize) -> Vec<Section> {
+    pub fn sectioning(&mut self, section_size: usize) -> Vec<Section> {
         // preprocess the double mats
         // section the mats
         // order the sections
 
         let mut sections: Vec<Section> = Vec::new();
 
-        let mat_ids: Vec<MatID> = self.cells.iter().flatten().copied().collect();
+        let mats = &self.mats;
 
-        for mat_id in &mat_ids {
-            let mat = &self.mats[*mat_id];
-            if mat.owned {
-                continue;
-            }
-            if matches!(mat.position, MatPosition::Double { .. }) {
-                let section = self.set_2x1_mat(*mat_id);
-                sections.push(section);
-            }
-        }
+        let mut visited: HashSet<MatID> = HashSet::new();
 
-        for mat_id in &mat_ids {
-            let seed_mat = &mut self.mats[*mat_id];
+        sections.extend(preprocess_double_mats(&mut visited, mats));
 
-            if seed_mat.owned || seed_mat.color == Color::None {
+        for seed_mat in mats {
+            if seed_mat.color == Color::None || !visited.insert(seed_mat.id) {
                 continue;
             }
 
             let seed_first_position = *seed_mat.position.first();
             let seed_color = seed_mat.color;
 
-            let seed_start_x = seed_mat.position.first().x;
-            let seed_start_y = seed_mat.position.first().y;
+            let start_x = seed_mat.position.first().x;
+            let start_y = seed_mat.position.first().y;
 
             let mut expand_right = true;
             let mut expand_down = true;
 
-            let mut x = seed_start_x + 1;
-            let mut y = seed_start_y + 1;
+            let mut x = start_x + 1;
+            let mut y = start_y + 1;
 
             let mut section_ids: Vec<MatID> = Vec::new();
 
-            seed_mat.owned = true;
-            section_ids.push(*mat_id);
+            section_ids.push(seed_mat.id);
 
             'outer: while expand_right || expand_down {
                 if expand_right {
@@ -442,12 +432,10 @@ impl FloorPlan {
                         continue;
                     }
 
-                    let cells_to_add: Vec<MatID> = self.cells[seed_start_y..y]
-                        .iter()
-                        .map(|row| row[x])
-                        .collect();
+                    let cells_to_add: Vec<MatID> =
+                        self.cells[start_y..y].iter().map(|row| row[x]).collect();
 
-                    if section_size < cells_to_add.len() + section_ids.len() {
+                    if cells_to_add.len() + section_ids.len() > section_size {
                         expand_right = false;
                         continue;
                     }
@@ -458,12 +446,7 @@ impl FloorPlan {
                             continue 'outer;
                         }
                     }
-
-                    for mat_id in &cells_to_add {
-                        let mat = &mut self.mats[*mat_id];
-                        mat.owned = true;
-                    }
-
+                    visited.extend(&cells_to_add);
                     section_ids.extend(cells_to_add);
 
                     x += 1;
@@ -475,9 +458,9 @@ impl FloorPlan {
                         continue;
                     }
 
-                    let cells_to_add: Vec<MatID> = self.cells[y][seed_start_x..x].to_vec();
+                    let cells_to_add: Vec<MatID> = self.cells[y][start_x..x].to_vec();
 
-                    if section_size < cells_to_add.len() + section_ids.len() {
+                    if cells_to_add.len() + section_ids.len() > section_size {
                         expand_down = false;
                         continue;
                     }
@@ -488,44 +471,29 @@ impl FloorPlan {
                             continue 'outer;
                         }
                     }
-
-                    for mat_id in &cells_to_add {
-                        let mat = &mut self.mats[*mat_id];
-                        mat.owned = true;
-                    }
-
+                    visited.extend(&cells_to_add);
                     section_ids.extend(cells_to_add);
-
                     y += 1;
                 }
             }
 
             let last_id = section_ids.last();
-            let mat_id = match last_id {
-                None => continue,
-                Some(id) => *id,
+            let Some(mat_id) = last_id else {
+                continue;
             };
 
-            let last_mat = &self.mats[mat_id];
+            let last_mat = &self.mats[*mat_id];
             let s = Section {
                 color: seed_color,
                 cells: section_ids,
-                first_postion: seed_first_position,
+                first_position: seed_first_position,
                 last_position: *last_mat.position.first(),
                 is_double_mat: false,
             };
             sections.push(s);
         }
-        sections.sort_unstable_by_key(|item| {
-            (
-                item.first_postion.x + item.first_postion.y,
-                item.first_postion.y,
-            )
-        });
 
-        self.reset_grid();
         self.cache = Some((sections.clone(), section_size));
-
         sections
     }
 
@@ -557,23 +525,6 @@ impl FloorPlan {
         out
     }
 
-    fn set_2x1_mat(&mut self, mat_id: MatID) -> Section {
-        let mat = &mut self.mats[mat_id];
-        let s = match mat.position {
-            MatPosition::Double { first, second, .. } => Section {
-                first_postion: first,
-                last_position: second,
-                cells: vec![mat_id],
-                color: mat.color,
-                is_double_mat: true,
-            },
-            MatPosition::Single(..) => panic!("Called set_2x1_mat on 1x1 mat"),
-        };
-
-        mat.owned = true;
-        s
-    }
-
     fn is_cell_available(&self, color: Color, mat_id: MatID) -> bool {
         let mat = &self.mats[mat_id];
         mat.color == color && !mat.owned
@@ -584,7 +535,8 @@ impl FloorPlan {
         delivery_size: usize,
         section_size: usize,
     ) -> Vec<Vec<MatID>> {
-        let sections = self.check_cache_or_build_diagonally(section_size);
+        let mut sections = self.check_cache_or_section(section_size);
+        sort_sections_diagonally(&mut sections);
 
         let mut deliveries: Vec<Vec<MatID>> = Vec::new();
         let mut current_delivery = Vec::new();
@@ -610,7 +562,8 @@ impl FloorPlan {
         delivery_size: usize,
         section_size: usize,
     ) -> Vec<Vec<MatID>> {
-        let sections = self.check_cache_or_build_diagonally(section_size);
+        let mut sections = self.check_cache_or_section(section_size);
+        sort_sections_diagonally(&mut sections);
 
         let mut deliveries: Vec<Vec<MatID>> = Vec::new();
         let mut current_delivery = Vec::new();
@@ -719,14 +672,14 @@ impl FloorPlan {
         }
     }
 
-    fn check_cache_or_build_diagonally(&mut self, section_size: usize) -> Vec<Section> {
+    fn check_cache_or_section(&mut self, section_size: usize) -> Vec<Section> {
         match &self.cache {
-            None => self.build_diagonally(section_size),
+            None => self.sectioning(section_size),
             Some(sections) => {
                 if sections.1 == section_size {
                     sections.0.clone()
                 } else {
-                    self.build_diagonally(section_size)
+                    self.sectioning(section_size)
                 }
             }
         }
@@ -735,4 +688,38 @@ impl FloorPlan {
     pub fn print_to_terminal(&self) {
         println!("{self}");
     }
+}
+
+fn preprocess_double_mats(visited: &mut HashSet<MatID>, mats: &[MatTile]) -> Vec<Section> {
+    let mut out = Vec::new();
+    for mat in mats {
+        if matches!(mat.position, MatPosition::Double { .. }) && visited.insert(mat.id) {
+            let section = set_2x1_mat(mat);
+            out.push(section);
+        }
+    }
+    out
+}
+
+fn set_2x1_mat(mat: &MatTile) -> Section {
+    let MatPosition::Double { first, second, .. } = mat.position else {
+        unreachable!("Called set_2x1_mat on 1x1 mat");
+    };
+
+    Section {
+        first_position: first,
+        last_position: second,
+        cells: vec![mat.id],
+        color: mat.color,
+        is_double_mat: true,
+    }
+}
+
+fn sort_sections_diagonally(sections: &mut [Section]) {
+    sections.sort_unstable_by_key(|item| {
+        (
+            item.first_position.x + item.first_position.y,
+            item.first_position.y,
+        )
+    });
 }
