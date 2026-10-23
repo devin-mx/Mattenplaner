@@ -3,6 +3,7 @@ use colored::Colorize;
 use std::{collections::HashSet, fmt, hash::Hash};
 
 type MatID = usize;
+pub type CompressedDelivery = Vec<(u16, Color)>;
 
 pub struct FloorPlan {
     cells: Vec<Vec<MatID>>,
@@ -46,7 +47,8 @@ pub struct MatTile {
     pub position: MatPosition,
     pub color: Color,
     pub owned: bool,
-    pub id: usize,
+    mat_type: MatType,
+    id: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Copy, Hash)]
@@ -73,6 +75,12 @@ pub enum GridError {
         col: usize,
         detail: String,
     },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
+pub enum MatType {
+    Single,
+    Double,
 }
 
 impl MatPosition {
@@ -358,6 +366,7 @@ impl FloorPlan {
                     let mat = MatTile {
                         position,
                         color,
+                        mat_type: MatType::Double,
                         owned: false,
                         id: mat_id,
                     };
@@ -373,6 +382,7 @@ impl FloorPlan {
                         color,
                         owned: false,
                         position,
+                        mat_type: MatType::Single,
                         id: mat_id,
                     };
                     mats.push(mat);
@@ -392,10 +402,6 @@ impl FloorPlan {
     }
 
     pub fn sectioning(&mut self, section_size: usize) -> Vec<Section> {
-        // preprocess the double mats
-        // section the mats
-        // order the sections
-
         let mut sections: Vec<Section> = Vec::new();
 
         let mats = &self.mats;
@@ -499,19 +505,17 @@ impl FloorPlan {
 
     pub fn generate_pages(
         &mut self,
-        delivery_size: usize,
-        section_size: usize,
-    ) -> Vec<Vec<MatTile>> {
-        let deliveries = self.separate_by_deliveries(delivery_size, section_size);
-
+        input: &[Vec<(MatTile, MatType)>],
+    ) -> Vec<(CompressedDelivery, Vec<Vec<MatTile>>)> {
         let mut out = Vec::new();
-        for delivery in deliveries {
+        for delivery in input {
             let mut groups = Vec::new();
-            for group in self.group_adjacent(&delivery) {
+            for group in self.group_adjacent(delivery) {
                 groups.push(self.page_builder(&group));
             }
-            // let _comp = self.compress_delivery(&delivery);
-            out.extend(groups);
+
+            let compressed_delivery = compress_delivery(delivery);
+            out.push((compressed_delivery, groups));
         }
         out
     }
@@ -532,73 +536,36 @@ impl FloorPlan {
 
     pub fn generate_deliveries(
         &mut self,
+        sections: &[Section],
         delivery_size: usize,
-        section_size: usize,
-    ) -> Vec<Vec<MatID>> {
-        let mut sections = self.check_cache_or_section(section_size);
-        sort_sections_diagonally(&mut sections);
-
-        let mut deliveries: Vec<Vec<MatID>> = Vec::new();
-        let mut current_delivery = Vec::new();
+    ) -> Vec<Vec<(MatTile, MatType)>> {
+        let mut out = Vec::new();
+        let mut current: Vec<(MatTile, MatType)> = Vec::new();
 
         for section in sections {
-            if section.is_double_mat {
-                continue;
-            }
-
-            for mat_id in section.cells {
-                if current_delivery.len() == delivery_size {
-                    deliveries.push(std::mem::take(&mut current_delivery));
+            for mat_id in &section.cells {
+                if count_single_mats(&current) == delivery_size {
+                    out.push(std::mem::take(&mut current));
                 }
-                current_delivery.push(mat_id);
+                let mat = &self.mats[*mat_id];
+                current.push((mat.clone(), mat.mat_type));
             }
         }
-        deliveries.push(current_delivery);
-        deliveries
+        out.push(current);
+        out
     }
-
-    fn separate_by_deliveries(
-        &mut self,
-        delivery_size: usize,
-        section_size: usize,
-    ) -> Vec<Vec<MatID>> {
-        let mut sections = self.check_cache_or_section(section_size);
-        sort_sections_diagonally(&mut sections);
-
-        let mut deliveries: Vec<Vec<MatID>> = Vec::new();
-        let mut current_delivery = Vec::new();
-
-        let mut current_size = 0;
-        for section in sections {
-            for mat_id in section.cells {
-                if current_size == delivery_size {
-                    deliveries.push(std::mem::take(&mut current_delivery));
-                    current_size = 0;
-                }
-                current_delivery.push(mat_id);
-
-                if section.is_double_mat {
-                    continue;
-                }
-                current_size += 1;
-            }
-        }
-        deliveries.push(current_delivery);
-        deliveries
-    }
-
-    fn group_adjacent(&self, delivery: &[MatID]) -> Vec<Vec<MatID>> {
-        let in_delivery: HashSet<MatID> = delivery.iter().copied().collect();
+    fn group_adjacent(&self, delivery: &[(MatTile, MatType)]) -> Vec<Vec<MatID>> {
+        let in_delivery: HashSet<MatID> = delivery.iter().map(|mat| mat.0.id).collect();
         let mut visited: HashSet<MatID> = HashSet::new();
         let mut groups = Vec::new();
 
-        for &start in delivery {
-            if !visited.insert(start) {
+        for (start, _) in delivery {
+            if !visited.insert(start.id) {
                 continue;
             }
 
-            let color = self.mats[start].color;
-            let mut stack = vec![start];
+            let color = self.mats[start.id].color;
+            let mut stack = vec![start.id];
             let mut group = Vec::new();
 
             while let Some(id) = stack.pop() {
@@ -643,45 +610,9 @@ impl FloorPlan {
         out
     }
 
-    #[allow(dead_code)]
-    fn compress_delivery(&self, delivery: &[MatID]) -> Vec<(u8, Color)> {
-        let mut out = Vec::new();
-        let mut color: Option<Color> = None;
-        let mut count = 0;
-        for id in delivery {
-            let mat = &self.mats[*id];
-
-            if color.is_none() {
-                color = Some(mat.color);
-            }
-
-            if color.unwrap() != mat.color {
-                out.push((count, color.unwrap()));
-                color = Some(mat.color);
-                count = 0;
-            }
-            count += 1;
-        }
-        out.push((count, color.unwrap()));
-        out
-    }
-
     fn reset_grid(&mut self) {
         for mat in &mut self.mats {
             mat.owned = false;
-        }
-    }
-
-    fn check_cache_or_section(&mut self, section_size: usize) -> Vec<Section> {
-        match &self.cache {
-            None => self.sectioning(section_size),
-            Some(sections) => {
-                if sections.1 == section_size {
-                    sections.0.clone()
-                } else {
-                    self.sectioning(section_size)
-                }
-            }
         }
     }
 
@@ -715,11 +646,42 @@ fn set_2x1_mat(mat: &MatTile) -> Section {
     }
 }
 
-fn sort_sections_diagonally(sections: &mut [Section]) {
+pub fn sort_sections_diagonally(sections: &mut [Section]) {
     sections.sort_unstable_by_key(|item| {
         (
             item.first_position.x + item.first_position.y,
             item.first_position.y,
         )
     });
+}
+
+fn count_single_mats(input: &[(MatTile, MatType)]) -> usize {
+    input
+        .iter()
+        .filter(|item| matches!(item.1, MatType::Single))
+        .count()
+}
+
+fn compress_delivery(delivery: &[(MatTile, MatType)]) -> Vec<(u16, Color)> {
+    let mut out = Vec::new();
+    let mut color: Option<Color> = None;
+    let mut count = 0;
+    for (mat, _) in delivery {
+        if matches!(mat.mat_type, MatType::Double) {
+            continue;
+        }
+
+        if color.is_none() {
+            color = Some(mat.color);
+        }
+
+        if color.unwrap() != mat.color {
+            out.push((count, color.unwrap()));
+            color = Some(mat.color);
+            count = 0;
+        }
+        count += 1;
+    }
+    out.push((count, color.unwrap()));
+    out
 }

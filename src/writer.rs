@@ -1,7 +1,9 @@
-use crate::models::{Color, Layout, MatPosition, MatTile};
+use crate::models::{Color, CompressedDelivery, Layout, MatPosition, MatTile};
 use anyhow::{Ok, Result};
 use rust_xlsxwriter::FormatBorder::Medium;
 use rust_xlsxwriter::{Format, Worksheet, workbook::Workbook};
+
+type Tatami = Vec<MatTile>;
 
 #[allow(clippy::struct_excessive_bools)]
 struct Borders {
@@ -74,8 +76,10 @@ fn washed(color: &str, factor: f32) -> String {
 
 fn set_cell_shape_to_square(worksheet: &mut Worksheet, length: u16) -> Result<()> {
     for i in 0..length {
-        worksheet.set_column_width_pixels(i, 38)?;
         worksheet.set_row_height_pixels(u32::from(i), 38)?;
+    }
+    for j in 0..1000 {
+        worksheet.set_column_width_pixels(j, 38)?;
     }
     Ok(())
 }
@@ -180,17 +184,41 @@ fn print_tatami_on_worksheet(
     Ok(())
 }
 
-pub fn write_output_excel(pages: &[Vec<MatTile>], name: &str) -> Result<()> {
+fn print_delivery_on_worksheet(
+    worksheet: &mut Worksheet,
+    offset: usize,
+    delivery: &CompressedDelivery,
+) -> Result<()> {
+    let mut f = Format::new();
+    f = f.set_font_size(21);
+    f = f.set_bold();
+
+    let mut s = String::new();
+    for (count, color) in delivery {
+        s = format!("{s} {count}x{color},");
+    }
+
+    worksheet.write_with_format(u32::try_from(offset)?, 1, s, &f)?;
+
+    Ok(())
+}
+
+pub fn write_output_excel(input: &[(CompressedDelivery, Vec<Tatami>)], name: &str) -> Result<()> {
     let mut workbook = Workbook::new();
     let worksheet = workbook.add_worksheet();
 
-    let length = u16::try_from(pages.len() * pages[0].len())?;
+    // let length = u16::try_from(pages.len() * pages[0].len())?;
+    set_cell_shape_to_square(worksheet, 65500)?;
 
-    set_cell_shape_to_square(worksheet, length)?;
+    let mut offset = 1;
 
-    for (count, mats) in pages.iter().enumerate() {
-        let offset = count * (mats.len().isqrt() + 5);
-        print_tatami_on_worksheet(worksheet, offset, mats)?;
+    for (delivery, pages) in input {
+        print_delivery_on_worksheet(worksheet, offset, delivery)?;
+        offset += 3;
+        for mats in pages {
+            print_tatami_on_worksheet(worksheet, offset, mats)?;
+            offset += 23;
+        }
     }
 
     let path_out = format!("excel_data/output-{name}.xlsx");
