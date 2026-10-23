@@ -25,7 +25,7 @@ fn main() -> Result<()> {
     let mut sections = floor_plan.sectioning(SECTIONING_SIZE);
     sort_sections_diagonally(&mut sections);
 
-    // FIX: Grouping and deviding into deliveries are independant; casues deliveries to be
+    // FIX: Grouping and dividing into deliveries are independant; casues deliveries to be
     //      wrong on the output EXCEL
 
     let deliveries = floor_plan.generate_deliveries(&sections, DELIVERY_SIZE);
